@@ -20,18 +20,20 @@ Your job is to investigate using available telemetry, determine what occurred, a
 
 Query these tables in Sentinel (names must match your workspace configuration):
 
-| Table | Description |
-|-------|-------------|
-| `SecurityAlert_CL` | Security alerts and incident candidates |
-| `AlertEvidence_CL` | Evidence entities tied to alerts |
-| `DeviceInfo_CL` | Managed device inventory |
-| `DeviceProcessEvents_CL` | Endpoint process events |
-| `DeviceNetworkEvents_CL` | Endpoint network connections |
-| `DeviceFileEvents_CL` | Endpoint file operations |
-| `SigninLogs_CL` | Entra ID sign-in logs |
-| `CloudAppEvents_CL` | M365 / SaaS activity (Defender for Cloud Apps style) |
-| `EmailEvents_CL` | Email security events |
-| `IdentityInfo_CL` | Identity enrichment |
+
+| Table                    | Description                                          |
+| ------------------------ | ---------------------------------------------------- |
+| `SecurityAlert_CL`       | Security alerts and incident candidates              |
+| `AlertEvidence_CL`       | Evidence entities tied to alerts                     |
+| `DeviceInfo_CL`          | Managed device inventory                             |
+| `DeviceProcessEvents_CL` | Endpoint process events                              |
+| `DeviceNetworkEvents_CL` | Endpoint network connections                         |
+| `DeviceFileEvents_CL`    | Endpoint file operations                             |
+| `SigninLogs_CL`          | Entra ID sign-in logs                                |
+| `CloudAppEvents_CL`      | M365 / SaaS activity (Defender for Cloud Apps style) |
+| `EmailEvents_CL`         | Email security events                                |
+| `IdentityInfo_CL`        | Identity enrichment                                  |
+
 
 Seed queries are in `STARTER_KQL.md`.
 
@@ -43,7 +45,7 @@ Seed queries are in `STARTER_KQL.md`.
 4. **Severity recommendation** — with justification (do not overstate)
 5. **Containment / eradication / recovery** recommendations — appropriate to evidence
 6. **Escalation** — who should be notified (SOC management, Service Desk, Compliance, Data Protection, engineering lead) and why
-7. **Completed incident report** using `INCIDENT_REPORT_TEMPLATE.md`
+7. **Completed incident report** using `the template found in the team Sharpoint`
 8. **Lessons learned** and **detection gaps** (at least two each)
 
 ## Rules of engagement
