@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ team_name }} - SOC Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' } } } } }
     </script>
@@ -22,6 +23,26 @@
             100% { opacity: 1; transform: translateX(0); background-color: transparent; }
         }
         .alert-new { animation: alertIn 0.6s ease-out forwards; }
+
+        /* Docs drawer */
+        #docs-drawer { transition: transform 0.3s ease; transform: translateX(100%); }
+        #docs-drawer.open { transform: translateX(0); }
+
+        /* Markdown prose styles */
+        .md-prose h1 { font-size: 1.25rem; font-weight: 700; color: #f9fafb; margin: 1rem 0 0.5rem; }
+        .md-prose h2 { font-size: 1.05rem; font-weight: 700; color: #e5e7eb; margin: 1.25rem 0 0.4rem; border-bottom: 1px solid #374151; padding-bottom: 0.25rem; }
+        .md-prose h3 { font-size: 0.9rem; font-weight: 600; color: #d1d5db; margin: 1rem 0 0.3rem; }
+        .md-prose p  { color: #9ca3af; font-size: 0.82rem; line-height: 1.6; margin-bottom: 0.6rem; }
+        .md-prose ul { list-style: disc; padding-left: 1.2rem; color: #9ca3af; font-size: 0.82rem; margin-bottom: 0.6rem; }
+        .md-prose li { margin-bottom: 0.2rem; line-height: 1.5; }
+        .md-prose code { font-family: monospace; font-size: 0.75rem; background: #111827; color: #34d399; padding: 0.1rem 0.3rem; border-radius: 3px; }
+        .md-prose pre  { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin-bottom: 0.8rem; }
+        .md-prose pre code { background: none; padding: 0; color: #86efac; font-size: 0.72rem; line-height: 1.5; }
+        .md-prose table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-bottom: 0.8rem; }
+        .md-prose th { background: #1f2937; color: #d1d5db; padding: 0.4rem 0.6rem; text-align: left; border: 1px solid #374151; }
+        .md-prose td { color: #9ca3af; padding: 0.35rem 0.6rem; border: 1px solid #1e293b; }
+        .md-prose strong { color: #e5e7eb; font-weight: 600; }
+        .md-prose blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75rem; color: #6b7280; font-size: 0.8rem; margin-bottom: 0.6rem; }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-300 h-screen flex flex-col overflow-hidden font-sans">
@@ -51,6 +72,10 @@
                 <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
                 <span>Live</span>
             </div>
+            <button onclick="toggleDocs()" class="flex items-center gap-2 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-800 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                Docs
+            </button>
         </div>
     </header>
 
@@ -132,6 +157,31 @@
                 <svg class="w-16 h-16 mb-4 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                 <p class="text-lg">Select an alert from the queue to view details</p>
             </div>
+        </div>
+    </div>
+
+    <!-- Docs Drawer -->
+    <div id="docs-overlay" onclick="toggleDocs()" class="hidden fixed inset-0 bg-black/50 z-30"></div>
+    <div id="docs-drawer" class="fixed top-0 right-0 h-full w-[480px] bg-gray-900 border-l border-gray-800 z-40 flex flex-col shadow-2xl">
+        <!-- Drawer Header -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-800 shrink-0">
+            <div class="flex gap-1">
+                <button onclick="switchTab('briefing')" id="tab-briefing"
+                    class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800">
+                    Briefing
+                </button>
+                <button onclick="switchTab('kql')" id="tab-kql"
+                    class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700">
+                    Starter KQL
+                </button>
+            </div>
+            <button onclick="toggleDocs()" class="text-gray-500 hover:text-gray-300 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <!-- Drawer Content -->
+        <div id="docs-content" class="flex-1 overflow-y-auto px-5 py-4 md-prose">
+            <div class="text-gray-600 text-sm text-center mt-16">Loading...</div>
         </div>
     </div>
 
@@ -314,6 +364,48 @@
 
         setInterval(pollState, 5000);
         pollState();
+
+        // --- Docs Drawer ---
+        let docsOpen = false;
+        let activeTab = 'briefing';
+        const docCache = {};
+
+        async function loadDoc(name) {
+            if (docCache[name]) return docCache[name];
+            const res = await fetch(`/api/docs/${name}`);
+            const data = await res.json();
+            docCache[name] = data.content;
+            return data.content;
+        }
+
+        async function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById('tab-briefing').className = tab === 'briefing'
+                ? 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800'
+                : 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700';
+            document.getElementById('tab-kql').className = tab === 'kql'
+                ? 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800'
+                : 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700';
+            const docName = tab === 'briefing' ? 'briefing' : 'starter-kql';
+            const content = await loadDoc(docName);
+            document.getElementById('docs-content').innerHTML = marked.parse(content);
+        }
+
+        function toggleDocs() {
+            docsOpen = !docsOpen;
+            const drawer = document.getElementById('docs-drawer');
+            const overlay = document.getElementById('docs-overlay');
+            if (docsOpen) {
+                drawer.classList.add('open');
+                overlay.classList.remove('hidden');
+                if (!docCache[activeTab === 'briefing' ? 'briefing' : 'starter-kql']) {
+                    switchTab(activeTab);
+                }
+            } else {
+                drawer.classList.remove('open');
+                overlay.classList.add('hidden');
+            }
+        }
     </script>
 </body>
 </html>

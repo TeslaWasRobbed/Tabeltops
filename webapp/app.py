@@ -289,6 +289,18 @@ def send_hint():
         return jsonify({"success": True})
     return jsonify({"error": "Invalid request"}), 400
 
+@app.route('/api/docs/<doc_name>')
+def get_doc(doc_name):
+    allowed = {"briefing": "ANALYST_BRIEFING.md", "starter-kql": "STARTER_KQL.md"}
+    filename = allowed.get(doc_name)
+    if not filename:
+        return jsonify({"error": "Not found"}), 404
+    doc_path = os.path.join(os.path.dirname(__file__), '..', filename)
+    if not os.path.exists(doc_path):
+        return jsonify({"error": "File not found"}), 404
+    with open(doc_path, encoding='utf-8') as f:
+        return jsonify({"content": f.read()})
+
 @app.route('/api/facilitator/reset', methods=['POST'])
 def reset_state():
     fresh = make_state()
