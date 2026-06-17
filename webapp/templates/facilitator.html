@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facilitator Controls</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' } } } } }
+    </script>
+</head>
+<body class="bg-gray-950 text-gray-300 min-h-screen p-8 font-sans">
+    
+    <div class="max-w-5xl mx-auto">
+        <div class="flex justify-between items-center mb-8 border-b border-gray-800 pb-4">
+            <h1 class="text-3xl font-bold text-white">Facilitator Dashboard</h1>
+            <button onclick="resetExercise()" class="bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 px-4 py-2 rounded text-sm font-bold transition-colors">Reset Exercise</button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-8">
+            
+            <!-- Timeline Control -->
+            <div class="col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-6">
+                <h2 class="text-xl font-bold text-white mb-4">Simulation Timeline</h2>
+                <p class="text-sm text-gray-400 mb-6">Current Phase: <span id="current-phase" class="text-blue-400 font-bold text-lg">0</span></p>
+                
+                <div class="space-y-3">
+                    <button onclick="setPhase(0)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 0: Initial Noise</button>
+                    <button onclick="setPhase(1)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 1: Postinstall</button>
+                    <button onclick="setPhase(2)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 2: Execution</button>
+                    <button onclick="setPhase(3)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 3: Network</button>
+                    <button onclick="setPhase(4)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 4: Cloud Access</button>
+                </div>
+            </div>
+
+            <!-- Team Controls -->
+            <div class="col-span-2 grid grid-cols-2 gap-6">
+                
+                <!-- Team 1 -->
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col h-[80vh]">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-xl font-bold text-white" id="t1-name">Alpha Team</h2>
+                        <p class="text-3xl font-black text-blue-500" id="t1-score">0</p>
+                    </div>
+                    
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Manual Adjustments</h3>
+                    <div class="flex gap-2 mb-4">
+                        <button onclick="adjustScore('team1', 5, 'Good KQL / Pivot')" class="bg-green-900/30 text-green-400 border border-green-900/50 px-3 py-1 rounded text-sm hover:bg-green-900/50">+5</button>
+                        <button onclick="adjustScore('team1', 10, 'Great Report')" class="bg-green-900/30 text-green-400 border border-green-900/50 px-3 py-1 rounded text-sm hover:bg-green-900/50">+10</button>
+                        <button onclick="adjustScore('team1', -5, 'Overclaiming / Penalty')" class="bg-red-900/30 text-red-400 border border-red-900/50 px-3 py-1 rounded text-sm hover:bg-red-900/50">-5</button>
+                    </div>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Send Hint</h3>
+                    <select id="t1-hint-select" class="bg-gray-800 text-xs text-gray-300 p-1.5 rounded border border-gray-700 w-full mb-2">
+                        <option value="-1">-- Clear Active Hint --</option>
+                        <option value="0">1. False Leads (Contractor)</option>
+                        <option value="1">2. Postinstall Process</option>
+                        <option value="2">3. Exfil Success?</option>
+                        <option value="3">4. Cloud vs Endpoint Timeline</option>
+                        <option value="4">5. TcpTimeout meaning</option>
+                    </select>
+                    <button onclick="sendHint('team1', document.getElementById('t1-hint-select').value)" class="bg-yellow-900/30 text-yellow-500 border border-yellow-900/50 px-3 py-1.5 rounded text-xs hover:bg-yellow-900/50 w-full mb-4">Send/Clear Hint</button>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Classifications</h3>
+                    <div id="t1-classifications" class="text-xs overflow-y-auto bg-gray-950 p-2 rounded border border-gray-800 flex-1 mb-4"></div>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Activity Log</h3>
+                    <div id="t1-log" class="text-xs text-gray-500 space-y-1 h-24 overflow-y-auto font-mono bg-gray-950 p-2 rounded border border-gray-800 shrink-0"></div>
+                </div>
+
+                <!-- Team 2 -->
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col h-[80vh]">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 class="text-xl font-bold text-white" id="t2-name">Bravo Team</h2>
+                        <p class="text-3xl font-black text-purple-500" id="t2-score">0</p>
+                    </div>
+                    
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Manual Adjustments</h3>
+                    <div class="flex gap-2 mb-4">
+                        <button onclick="adjustScore('team2', 5, 'Good KQL / Pivot')" class="bg-green-900/30 text-green-400 border border-green-900/50 px-3 py-1 rounded text-sm hover:bg-green-900/50">+5</button>
+                        <button onclick="adjustScore('team2', 10, 'Great Report')" class="bg-green-900/30 text-green-400 border border-green-900/50 px-3 py-1 rounded text-sm hover:bg-green-900/50">+10</button>
+                        <button onclick="adjustScore('team2', -5, 'Overclaiming / Penalty')" class="bg-red-900/30 text-red-400 border border-red-900/50 px-3 py-1 rounded text-sm hover:bg-red-900/50">-5</button>
+                    </div>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Send Hint</h3>
+                    <select id="t2-hint-select" class="bg-gray-800 text-xs text-gray-300 p-1.5 rounded border border-gray-700 w-full mb-2">
+                        <option value="-1">-- Clear Active Hint --</option>
+                        <option value="0">1. False Leads (Contractor)</option>
+                        <option value="1">2. Postinstall Process</option>
+                        <option value="2">3. Exfil Success?</option>
+                        <option value="3">4. Cloud vs Endpoint Timeline</option>
+                        <option value="4">5. TcpTimeout meaning</option>
+                    </select>
+                    <button onclick="sendHint('team2', document.getElementById('t2-hint-select').value)" class="bg-yellow-900/30 text-yellow-500 border border-yellow-900/50 px-3 py-1.5 rounded text-xs hover:bg-yellow-900/50 w-full mb-4">Send/Clear Hint</button>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Classifications</h3>
+                    <div id="t2-classifications" class="text-xs overflow-y-auto bg-gray-950 p-2 rounded border border-gray-800 flex-1 mb-4"></div>
+
+                    <h3 class="text-sm font-semibold text-gray-400 mb-2">Activity Log</h3>
+                    <div id="t2-log" class="text-xs text-gray-500 space-y-1 h-24 overflow-y-auto font-mono bg-gray-950 p-2 rounded border border-gray-800 shrink-0"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function setPhase(phase) {
+            await fetch('/api/facilitator/phase', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({phase: phase})
+            });
+            pollState();
+        }
+
+        async function adjustScore(team, points, reason) {
+            await fetch('/api/facilitator/score', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({team_id: team, points: points, reason: reason})
+            });
+            pollState();
+        }
+
+        async function sendHint(team, index) {
+            await fetch('/api/facilitator/hint', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({team_id: team, hint_index: parseInt(index)})
+            });
+            pollState();
+        }
+
+        function renderClassifications(teamId, closed, answers) {
+            let html = '<table class="w-full text-left"><thead><tr class="text-gray-500 border-b border-gray-800"><th>Alert</th><th>Guess</th><th>Actual</th></tr></thead><tbody>';
+            for (const [alertId, guess] of Object.entries(closed)) {
+                const actual = answers[alertId];
+                const isCorrect = guess === actual;
+                const color = isCorrect ? 'text-green-400' : 'text-red-400';
+                const shortId = alertId.split('-').slice(-1)[0];
+                html += `<tr><td class="py-1 text-gray-300" title="${alertId}">${shortId}</td><td class="${color}">${guess}</td><td class="text-gray-500">${actual}</td></tr>`;
+            }
+            html += '</tbody></table>';
+            if (Object.keys(closed).length === 0) html = '<div class="text-gray-600 italic">No alerts classified yet.</div>';
+            document.getElementById(`${teamId}-classifications`).innerHTML = html;
+        }
+
+        async function resetExercise() {
+            if (confirm("Are you sure you want to reset the exercise? This will clear all scores, logs, and classifications for both teams.")) {
+                await fetch('/api/facilitator/reset', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                pollState();
+            }
+        }
+
+        async function pollState() {
+            try {
+                const res = await fetch('/api/leaderboard_data');
+                const data = await res.json();
+                
+                document.getElementById('current-phase').innerText = data.phase;
+                
+                document.getElementById('t1-name').innerText = data.teams.team1.name;
+                document.getElementById('t1-score').innerText = data.teams.team1.score;
+                
+                document.getElementById('t2-name').innerText = data.teams.team2.name;
+                document.getElementById('t2-score').innerText = data.teams.team2.score;
+
+                renderClassifications('t1', data.teams.team1.closed, data.answers);
+                renderClassifications('t2', data.teams.team2.closed, data.answers);
+
+                // Fetch logs
+                const r1 = await fetch('/api/state/team1');
+                const d1 = await r1.json();
+                document.getElementById('t1-log').innerHTML = d1.log.map(l => `<div>> ${l}</div>`).join('');
+
+                const r2 = await fetch('/api/state/team2');
+                const d2 = await r2.json();
+                document.getElementById('t2-log').innerHTML = d2.log.map(l => `<div>> ${l}</div>`).join('');
+
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(pollState, 2000);
+        pollState();
+    </script>
+</body>
+</html>

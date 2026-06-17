@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creditsafe SOC - Leaderboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' } } } } }
+    </script>
+</head>
+<body class="bg-gray-950 text-gray-300 h-screen flex flex-col font-sans">
+    
+    <header class="bg-gray-900 border-b border-gray-800 p-6 text-center">
+        <h1 class="text-3xl font-bold text-white tracking-tight">Incident INC-20260528-0042</h1>
+        <p class="text-gray-400 mt-2 text-lg">Simulation Phase: <span id="current-phase" class="text-blue-400 font-bold">0</span></p>
+    </header>
+
+    <div class="flex-1 flex items-center justify-center p-12">
+        <div class="grid grid-cols-2 gap-16 w-full max-w-6xl">
+            
+            <!-- Team 1 -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-10 flex flex-col items-center shadow-2xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
+                <h2 id="t1-name" class="text-4xl font-bold text-white mb-8">Alpha Team</h2>
+                <div class="text-9xl font-black text-blue-500 mb-8 tracking-tighter" id="t1-score">0</div>
+                <div class="text-gray-400 text-xl">Alerts Classified: <span id="t1-closed" class="text-white font-bold">0</span></div>
+            </div>
+
+            <!-- Team 2 -->
+            <div class="bg-gray-900 border border-gray-800 rounded-2xl p-10 flex flex-col items-center shadow-2xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-2 bg-purple-600"></div>
+                <h2 id="t2-name" class="text-4xl font-bold text-white mb-8">Bravo Team</h2>
+                <div class="text-9xl font-black text-purple-500 mb-8 tracking-tighter" id="t2-score">0</div>
+                <div class="text-gray-400 text-xl">Alerts Classified: <span id="t2-closed" class="text-white font-bold">0</span></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        async function pollLeaderboard() {
+            try {
+                const res = await fetch('/api/leaderboard_data');
+                const data = await res.json();
+                
+                document.getElementById('current-phase').innerText = data.phase;
+                
+                document.getElementById('t1-name').innerText = data.teams.team1.name;
+                document.getElementById('t1-score').innerText = data.teams.team1.score;
+                document.getElementById('t1-closed').innerText = Object.keys(data.teams.team1.closed).length;
+
+                document.getElementById('t2-name').innerText = data.teams.team2.name;
+                document.getElementById('t2-score').innerText = data.teams.team2.score;
+                document.getElementById('t2-closed').innerText = Object.keys(data.teams.team2.closed).length;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(pollLeaderboard, 2000);
+        pollLeaderboard();
+    </script>
+</body>
+</html>
