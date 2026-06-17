@@ -2,7 +2,7 @@
 
 **Exercise name:** Shadow AI / Developer Supply-Chain Incident  
 **Format:** Competitive two-team tabletop  
-**Intended duration:** 09:00–12:00 (3 hours total — ~2 hours investigation, ~1 hour debrief)  
+**Intended duration:** 09:00–12:00 (3 hours total — 10 min brief, ~2 hrs investigation, 45 min team presentations + joint lessons learned)  
 **Difficulty:** High  
 
 ---
@@ -134,16 +134,17 @@ The exercise is entirely self-contained. No production systems, real users, or e
 
 ## Time Plan
 
-| Clock | Activity |
-|-------|----------|
-| 08:30 | Facilitator pre-check: confirm Sentinel watchlists uploaded, VM app running, team URLs accessible |
-| 09:00 | Welcome and scene-setting — teams receive `ANALYST_BRIEFING.md` and exercise app URL |
-| 09:05 | Facilitator starts simulation — alerts begin streaming into the SIEM dashboard |
-| 09:05–11:00 | **Active investigation** — teams investigate using Sentinel KQL, classify alerts, build timeline and incident report |
-| 11:00 | Facilitator calls time — teams submit completed incident reports |
-| 11:00–11:10 | Leaderboard review — final scores, first-solve breakdown |
-| 11:10–11:55 | **Debrief** — facilitator walks through ground truth and correct investigation path using validation KQL; teams discuss their conclusions |
-| 11:55–12:00 | Lessons learned, wrap-up, any follow-up actions |
+| Clock | Duration | Activity |
+|-------|----------|----------|
+| 08:30 | — | **Facilitator pre-check:** Sentinel watchlists uploaded, VM app running, team URLs verified |
+| 09:00 | 10 min | **Brief** — scene-setting, rules of engagement, hand out `ANALYST_BRIEFING.md`, share exercise app URLs |
+| 09:10 | — | **Facilitator starts simulation** — alerts begin streaming |
+| 09:10–11:05 | ~115 min | **Active investigation** — teams investigate in Sentinel using KQL, classify alerts, build investigation timeline and incident report |
+| 11:05 | — | Facilitator calls time — simulation paused, teams finalise reports |
+| 11:15 | 15 min | **Team Alpha presents** — findings, timeline, severity recommendation, containment plan |
+| 11:30 | 15 min | **Team Bravo presents** — findings, timeline, severity recommendation, containment plan |
+| 11:45 | 15 min | **Joint lessons learned** — facilitator reveals ground truth, walks through correct investigation path, both teams discuss detection gaps and process improvements |
+| 12:00 | — | Close |
 
 ---
 

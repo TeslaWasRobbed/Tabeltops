@@ -39,14 +39,25 @@ Seed queries are in `STARTER_KQL.md`.
 
 ## Expected deliverables
 
-1. **Triage summary** — alert prioritisation with rationale (15 minutes equivalent)
+1. **Triage summary** — alert prioritisation with rationale
 2. **Investigation timeline** — ordered key events with UTC timestamps
 3. **Findings** — what is confirmed vs suspected vs ruled out
 4. **Severity recommendation** — with justification (do not overstate)
 5. **Containment / eradication / recovery** recommendations — appropriate to evidence
 6. **Escalation** — who should be notified (SOC management, Service Desk, Compliance, Data Protection, engineering lead) and why
-7. **Completed incident report** using `the template found in the team Sharpoint`
+7. **Completed incident report** using the template found in the team SharePoint
 8. **Lessons learned** and **detection gaps** (at least two each)
+
+## Presentation
+
+At **11:15**, each team will have **15 minutes** to present their findings to the room. Structure your presentation around:
+
+- What happened (your investigation narrative)
+- What you confirmed, what remains inconclusive, and what you ruled out
+- Your severity and classification decision — and why
+- Your containment and escalation recommendations
+
+You will then participate in a **joint lessons learned session** at 11:45. Come prepared to discuss what detection gaps you identified and how you would address them.
 
 ## Rules of engagement
 
