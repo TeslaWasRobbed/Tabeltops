@@ -78,7 +78,7 @@ def make_state():
     return {
         "sim": {
             "running": False,
-            "speed": 10,           # incident-seconds per real-second
+            "speed": 6,            # incident-seconds per real-second (6× ≈ 40 real min for full timeline; suits a 2hr session)
             "start_real": None,    # time.time() when simulation was (last) started
             "offset_secs": 0,      # incident-seconds already elapsed before last start/pause
         },
