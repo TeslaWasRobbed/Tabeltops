@@ -19,17 +19,50 @@
 
         <div class="grid grid-cols-3 gap-8">
             
-            <!-- Timeline Control -->
-            <div class="col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-6">
-                <h2 class="text-xl font-bold text-white mb-4">Simulation Timeline</h2>
-                <p class="text-sm text-gray-400 mb-6">Current Phase: <span id="current-phase" class="text-blue-400 font-bold text-lg">0</span></p>
-                
-                <div class="space-y-3">
-                    <button onclick="setPhase(0)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 0: Initial Noise</button>
-                    <button onclick="setPhase(1)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 1: Postinstall</button>
-                    <button onclick="setPhase(2)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 2: Execution</button>
-                    <button onclick="setPhase(3)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 3: Network</button>
-                    <button onclick="setPhase(4)" class="w-full text-left px-4 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm">Phase 4: Cloud Access</button>
+            <!-- Simulation Control -->
+            <div class="col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-6 flex flex-col gap-4">
+                <h2 class="text-xl font-bold text-white">Simulation Clock</h2>
+
+                <!-- Clock display -->
+                <div class="bg-gray-950 border border-gray-700 rounded-lg p-4 text-center">
+                    <div class="text-xs text-gray-500 uppercase tracking-widest mb-1">Incident Time</div>
+                    <div id="sim-clock" class="text-3xl font-mono font-bold text-green-400 tracking-wider">--:--:--</div>
+                    <div id="sim-date" class="text-xs text-gray-600 mt-1">2026-05-28</div>
+                    <div id="sim-status" class="mt-2 text-xs font-semibold text-yellow-500">PAUSED</div>
+                </div>
+
+                <!-- Start / Pause -->
+                <div class="flex gap-2">
+                    <button id="btn-start" onclick="simStart()" class="flex-1 bg-green-900/40 hover:bg-green-900/60 text-green-400 border border-green-800 py-2 rounded font-bold transition-colors">
+                        ▶ Start
+                    </button>
+                    <button id="btn-pause" onclick="simPause()" class="flex-1 bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 border border-yellow-800 py-2 rounded font-bold transition-colors">
+                        ⏸ Pause
+                    </button>
+                </div>
+
+                <!-- Speed -->
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">Speed</div>
+                    <div class="grid grid-cols-4 gap-1">
+                        <button onclick="simSpeed(3)"  class="speed-btn px-2 py-1.5 rounded text-xs border border-gray-700 bg-gray-800 hover:bg-gray-700" data-speed="3">3×</button>
+                        <button onclick="simSpeed(6)"  class="speed-btn px-2 py-1.5 rounded text-xs border border-gray-700 bg-gray-800 hover:bg-gray-700" data-speed="6">6×</button>
+                        <button onclick="simSpeed(10)" class="speed-btn px-2 py-1.5 rounded text-xs border border-blue-700 bg-blue-900/30 text-blue-300 font-bold" data-speed="10">10×</button>
+                        <button onclick="simSpeed(20)" class="speed-btn px-2 py-1.5 rounded text-xs border border-gray-700 bg-gray-800 hover:bg-gray-700" data-speed="20">20×</button>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-1">Default 10× ≈ 24 min for full exercise</p>
+                </div>
+
+                <!-- Manual jump -->
+                <div>
+                    <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">Jump To</div>
+                    <div class="space-y-1.5">
+                        <button onclick="simJump('2026-05-28T06:00:00Z')" class="w-full text-left px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300">06:00 — Simulation Start</button>
+                        <button onclick="simJump('2026-05-28T08:35:00Z')" class="w-full text-left px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300">08:35 — Email / Early Alerts</button>
+                        <button onclick="simJump('2026-05-28T09:10:00Z')" class="w-full text-left px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-yellow-300">09:10 — npm Install (Core)</button>
+                        <button onclick="simJump('2026-05-28T09:18:00Z')" class="w-full text-left px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-red-300">09:18 — C2 Callback</button>
+                        <button onclick="simJump('2026-05-28T10:05:00Z')" class="w-full text-left px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-orange-300">10:05 — All Alerts Visible</button>
+                    </div>
                 </div>
             </div>
 
@@ -105,11 +138,25 @@
     </div>
 
     <script>
-        async function setPhase(phase) {
-            await fetch('/api/facilitator/phase', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({phase: phase})
+        async function simStart() {
+            await fetch('/api/facilitator/simulation/start', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+            pollState();
+        }
+        async function simPause() {
+            await fetch('/api/facilitator/simulation/pause', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+            pollState();
+        }
+        async function simSpeed(s) {
+            await fetch('/api/facilitator/simulation/speed', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({speed: s})
+            });
+            pollState();
+        }
+        async function simJump(t) {
+            await fetch('/api/facilitator/simulation/jump', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({incident_time: t})
             });
             pollState();
         }
@@ -160,12 +207,29 @@
             try {
                 const res = await fetch('/api/leaderboard_data');
                 const data = await res.json();
-                
-                document.getElementById('current-phase').innerText = data.phase;
-                
+
+                // Update simulation clock
+                if (data.sim_time) {
+                    const t = data.sim_time.split('T')[1].replace('Z','');
+                    document.getElementById('sim-clock').innerText = t;
+                    const statusEl = document.getElementById('sim-status');
+                    statusEl.innerText = data.sim_running ? `RUNNING  ${data.sim_speed}×` : 'PAUSED';
+                    statusEl.className = data.sim_running
+                        ? 'mt-2 text-xs font-semibold text-green-400'
+                        : 'mt-2 text-xs font-semibold text-yellow-500';
+
+                    // Highlight active speed button
+                    document.querySelectorAll('.speed-btn').forEach(btn => {
+                        const isActive = parseInt(btn.dataset.speed) === data.sim_speed;
+                        btn.className = isActive
+                            ? 'speed-btn px-2 py-1.5 rounded text-xs border border-blue-700 bg-blue-900/30 text-blue-300 font-bold'
+                            : 'speed-btn px-2 py-1.5 rounded text-xs border border-gray-700 bg-gray-800 hover:bg-gray-700 text-gray-300';
+                    });
+                }
+
                 document.getElementById('t1-name').innerText = data.teams.team1.name;
                 document.getElementById('t1-score').innerText = data.teams.team1.score;
-                
+
                 document.getElementById('t2-name').innerText = data.teams.team2.name;
                 document.getElementById('t2-score').innerText = data.teams.team2.score;
 

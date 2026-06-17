@@ -1,6 +1,8 @@
 import csv
 import json
 import os
+import time
+from datetime import datetime, timezone, timedelta
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
@@ -65,14 +67,40 @@ HINTS = [
     "Hint 5: Review the AdditionalFields in the network events. A 'TcpTimeout' means no data was sent."
 ]
 
-state = {
-    "current_phase": 0,
-    "first_solves": {},
-    "teams": {
-        "team1": {"name": "Alpha Team", "score": 0, "closed": {}, "log": [], "current_hint": -1},
-        "team2": {"name": "Bravo Team", "score": 0, "closed": {}, "log": [], "current_hint": -1}
+# Incident timestamps span 2026-05-28T06:12 to 2026-05-28T10:04 (~4 hours).
+# The simulation clock compresses this into real time via the speed multiplier:
+#   speed=6  → ~40 real minutes for full exercise
+#   speed=10 → ~24 real minutes (default)
+#   speed=20 → ~12 real minutes (fast demo)
+SIM_INCIDENT_START = datetime(2026, 5, 28, 6, 0, 0, tzinfo=timezone.utc)
+
+def make_state():
+    return {
+        "sim": {
+            "running": False,
+            "speed": 10,           # incident-seconds per real-second
+            "start_real": None,    # time.time() when simulation was (last) started
+            "offset_secs": 0,      # incident-seconds already elapsed before last start/pause
+        },
+        "first_solves": {},
+        "teams": {
+            "team1": {"name": "Alpha Team", "score": 0, "closed": {}, "log": [], "current_hint": -1},
+            "team2": {"name": "Bravo Team", "score": 0, "closed": {}, "log": [], "current_hint": -1}
+        }
     }
-}
+
+state = make_state()
+
+def get_sim_time():
+    """Return the current simulated incident datetime."""
+    sim = state["sim"]
+    elapsed = sim["offset_secs"]
+    if sim["running"] and sim["start_real"] is not None:
+        elapsed += (time.time() - sim["start_real"]) * sim["speed"]
+    return SIM_INCIDENT_START + timedelta(seconds=elapsed)
+
+def sim_time_str():
+    return get_sim_time().strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def load_alerts():
     alerts = []
@@ -120,33 +148,40 @@ def facilitator():
 def get_state(team_id):
     if team_id not in state["teams"]:
         return jsonify({"error": "Team not found"}), 404
-    
+
     team_data = state["teams"][team_id]
-    
-    # Filter alerts based on current phase and whether the team has closed them
+    current_sim = get_sim_time()
+
+    # Show alert if its incident timestamp has passed in the simulation
     visible_alerts = []
     for alert in ALERTS_DB:
         aid = alert["SystemAlertId"]
-        alert_phase = PHASES.get(aid, 0)
-        
-        if alert_phase <= state["current_phase"] and aid not in team_data["closed"]:
+        try:
+            alert_time = datetime.fromisoformat(alert["TimeGenerated"].replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if alert_time <= current_sim and aid not in team_data["closed"]:
             visible_alerts.append(alert)
-            
-    # Sort newest first for the UI
+
     visible_alerts.sort(key=lambda x: x['TimeGenerated'], reverse=True)
-            
+
     return jsonify({
         "score": team_data["score"],
         "alerts": visible_alerts,
         "closed_count": len(team_data["closed"]),
-        "log": team_data["log"][-5:], # Send last 5 log entries
-        "hint": HINTS[team_data["current_hint"]] if team_data["current_hint"] >= 0 else None
+        "log": team_data["log"][-5:],
+        "hint": HINTS[team_data["current_hint"]] if team_data["current_hint"] >= 0 else None,
+        "sim_time": sim_time_str(),
+        "sim_running": state["sim"]["running"],
+        "sim_speed": state["sim"]["speed"],
     })
 
 @app.route('/api/leaderboard_data')
 def get_leaderboard():
     return jsonify({
-        "phase": state["current_phase"],
+        "sim_time": sim_time_str(),
+        "sim_running": state["sim"]["running"],
+        "sim_speed": state["sim"]["speed"],
         "teams": state["teams"],
         "answers": ANSWERS
     })
@@ -186,14 +221,49 @@ def classify_alert():
     
     return jsonify({"success": True, "message": msg, "points": points, "new_score": team["score"]})
 
-@app.route('/api/facilitator/phase', methods=['POST'])
-def advance_phase():
-    data = request.json
-    new_phase = data.get("phase")
-    if new_phase is not None and 0 <= new_phase <= 4:
-        state["current_phase"] = new_phase
-        return jsonify({"success": True, "phase": state["current_phase"]})
-    return jsonify({"error": "Invalid phase"}), 400
+@app.route('/api/facilitator/simulation/start', methods=['POST'])
+def sim_start():
+    sim = state["sim"]
+    if not sim["running"]:
+        sim["start_real"] = time.time()
+        sim["running"] = True
+    return jsonify({"success": True, "sim_time": sim_time_str()})
+
+@app.route('/api/facilitator/simulation/pause', methods=['POST'])
+def sim_pause():
+    sim = state["sim"]
+    if sim["running"] and sim["start_real"] is not None:
+        sim["offset_secs"] += (time.time() - sim["start_real"]) * sim["speed"]
+        sim["start_real"] = None
+        sim["running"] = False
+    return jsonify({"success": True, "sim_time": sim_time_str()})
+
+@app.route('/api/facilitator/simulation/speed', methods=['POST'])
+def sim_speed():
+    sim = state["sim"]
+    new_speed = request.json.get("speed")
+    if new_speed and new_speed in [3, 6, 10, 20]:
+        # Capture elapsed before changing speed
+        if sim["running"] and sim["start_real"] is not None:
+            sim["offset_secs"] += (time.time() - sim["start_real"]) * sim["speed"]
+            sim["start_real"] = time.time()
+        sim["speed"] = new_speed
+        return jsonify({"success": True, "speed": sim["speed"]})
+    return jsonify({"error": "Invalid speed. Use 3, 6, 10 or 20"}), 400
+
+@app.route('/api/facilitator/simulation/jump', methods=['POST'])
+def sim_jump():
+    """Jump simulation to a specific incident time (for manual override)."""
+    sim = state["sim"]
+    target = request.json.get("incident_time")  # e.g. "2026-05-28T09:10:00Z"
+    try:
+        t = datetime.fromisoformat(target.replace("Z", "+00:00"))
+        sim["offset_secs"] = (t - SIM_INCIDENT_START).total_seconds()
+        if sim["running"]:
+            sim["start_real"] = time.time()
+        return jsonify({"success": True, "sim_time": sim_time_str()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route('/api/facilitator/score', methods=['POST'])
 def adjust_score():
@@ -221,11 +291,9 @@ def send_hint():
 
 @app.route('/api/facilitator/reset', methods=['POST'])
 def reset_state():
-    state["current_phase"] = 0
-    state["first_solves"] = {}
-    state["teams"]["team1"] = {"name": "Alpha Team", "score": 0, "closed": {}, "log": [], "current_hint": -1}
-    state["teams"]["team2"] = {"name": "Bravo Team", "score": 0, "closed": {}, "log": [], "current_hint": -1}
+    fresh = make_state()
+    state.update(fresh)
     return jsonify({"success": True})
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

@@ -16,6 +16,12 @@
         .alert-item { transition: all 0.2s ease-in-out; }
         .alert-item:hover { transform: translateX(4px); }
         .alert-item.selected { border-left: 4px solid #3b82f6; background-color: #1f2937; }
+        @keyframes alertIn {
+            0%   { opacity: 0; transform: translateX(-12px); background-color: rgba(234,179,8,0.15); }
+            60%  { background-color: rgba(234,179,8,0.1); }
+            100% { opacity: 1; transform: translateX(0); background-color: transparent; }
+        }
+        .alert-new { animation: alertIn 0.6s ease-out forwards; }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-300 h-screen flex flex-col overflow-hidden font-sans">
@@ -32,13 +38,18 @@
             <h1 class="text-lg font-semibold text-white tracking-wide">{{ team_name }} <span class="text-gray-500 font-normal">| Defender XDR</span></h1>
         </div>
         <div class="flex items-center gap-6">
+            <div class="text-sm font-mono bg-gray-800 border border-gray-700 px-3 py-1 rounded flex items-center gap-2">
+                <span id="sim-status-dot" class="w-2 h-2 rounded-full bg-gray-600"></span>
+                <span class="text-gray-400 text-xs">INC TIME</span>
+                <span id="sim-clock" class="text-green-400 font-bold tracking-wider">--:--:--</span>
+            </div>
             <div class="text-sm">
                 <span class="text-gray-500">Score:</span>
                 <span id="team-score" class="text-white font-bold text-lg ml-1">0</span>
             </div>
             <div class="flex items-center gap-2 text-sm text-gray-400">
                 <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span>Live Sync</span>
+                <span>Live</span>
             </div>
         </div>
     </header>
@@ -127,6 +138,7 @@
     <script>
         const TEAM_ID = "{{ team_id }}";
         let currentAlerts = [];
+        let currentAlertIds = new Set();
         let selectedAlertId = null;
 
         function getSeverityColor(severity) {
@@ -160,29 +172,49 @@
             try {
                 const res = await fetch(`/api/state/${TEAM_ID}`);
                 const data = await res.json();
-                
+
                 document.getElementById('team-score').innerText = data.score;
-                
+
+                // Update simulation clock
+                if (data.sim_time) {
+                    const t = data.sim_time.split('T')[1].replace('Z','');
+                    document.getElementById('sim-clock').innerText = t;
+                    const dot = document.getElementById('sim-status-dot');
+                    if (data.sim_running) {
+                        dot.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+                    } else {
+                        dot.className = 'w-2 h-2 rounded-full bg-yellow-500';
+                    }
+                }
+
                 if (data.hint) {
                     document.getElementById('hint-text').innerText = data.hint;
                     document.getElementById('hint-banner').classList.remove('hidden');
                 } else {
                     document.getElementById('hint-banner').classList.add('hidden');
                 }
-                
-                // Only re-render if alerts changed
-                if(JSON.stringify(data.alerts.map(a => a.SystemAlertId)) !== JSON.stringify(currentAlerts.map(a => a.SystemAlertId))) {
+
+                // Detect newly arrived alerts for flash animation
+                const newIds = new Set(data.alerts.map(a => a.SystemAlertId));
+                const incoming = data.alerts.filter(a => !currentAlertIds.has(a.SystemAlertId));
+
+                const alertsChanged = JSON.stringify([...newIds].sort()) !== JSON.stringify([...currentAlertIds].sort());
+                if (alertsChanged) {
                     currentAlerts = data.alerts;
-                    renderAlerts();
+                    currentAlertIds = newIds;
+                    renderAlerts(incoming.map(a => a.SystemAlertId));
+                    if (incoming.length > 0) {
+                        showToast(`${incoming.length} new alert${incoming.length > 1 ? 's' : ''} received`, true);
+                    }
                 }
             } catch (e) {
                 console.error("Polling failed", e);
             }
         }
 
-        function renderAlerts() {
+        function renderAlerts(newIds = []) {
             const list = document.getElementById('alert-list');
-            document.getElementById('alert-count').innerText = `${currentAlerts.length} Alerts`;
+            document.getElementById('alert-count').innerText = `${currentAlerts.length} Alert${currentAlerts.length !== 1 ? 's' : ''}`;
             
             if(currentAlerts.length === 0) {
                 list.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-3"><p class="text-sm">No active alerts.</p></div>`;
@@ -195,7 +227,8 @@
             currentAlerts.forEach(alert => {
                 const div = document.createElement('div');
                 const isSelected = alert.SystemAlertId === selectedAlertId ? 'selected' : '';
-                div.className = `alert-item cursor-pointer p-3 rounded-lg border border-gray-800 bg-gray-900 hover:bg-gray-800 flex gap-3 ${isSelected}`;
+                const isNew = newIds.includes(alert.SystemAlertId) ? 'alert-new' : '';
+                div.className = `alert-item cursor-pointer p-3 rounded-lg border border-gray-800 bg-gray-900 hover:bg-gray-800 flex gap-3 ${isSelected} ${isNew}`;
                 div.onclick = () => selectAlert(alert, div);
 
                 div.innerHTML = `
@@ -279,7 +312,7 @@
             }
         }
 
-        setInterval(pollState, 3000);
+        setInterval(pollState, 5000);
         pollState();
     </script>
 </body>
