@@ -296,4 +296,7 @@ def reset_state():
     return jsonify({"success": True})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # threaded=True handles concurrent requests from multiple team browsers
+    # debug=False prevents the interactive debugger being exposed on the network
+    # use_reloader=False prevents a file save mid-exercise from restarting and wiping state
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_reloader=False)
