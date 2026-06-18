@@ -47,6 +47,21 @@ If teams argue their (incorrect) findings, use these rebuttals:
 **Q: "The initial access was phishing via the AI trial email."**
 > **Your response:** "In incident response, we need hard evidence linking events. Was there a process tree showing Outlook or Chrome spawning a malicious payload at 08:35? No. The execution started cleanly at 09:10 with a developer manually running `npm install`. Correlation does not equal causation."
 
+**Q: "Could the attacker have stolen Jordan's VPN credentials to sign in from Dublin?"**
+> **Your response:** "Did you check the `AuthenticationDetails` in `SigninLogs_CL`? The Dublin sign-in succeeded with `PhoneAppNotification` (MFA). Unless the attacker also stole Jordan's physical phone, this was Jordan. Also, the helpdesk ticket in the `Status` field confirms it was a legitimate corporate VPN session."
+
+**Q: "Why did Defender flag the SharePoint download if it was just Jordan doing his normal job?"**
+> **Your response:** "Defender for Cloud Apps uses UEBA (User and Entity Behavior Analytics). It flagged the download because accessing a file labeled 'Customer Data' was *statistically unusual* for Jordan (`UncommonForUser.Score=72`), not because it detected malware. Security tools flag anomalies; analysts must determine the intent."
+
+**Q: "The `update-cdn-lab.example` connection was just a normal software update, right?"**
+> **Your response:** "Look at the `InitiatingProcessFileName`. Legitimate CDNs are usually contacted by browsers or update executables (like `Code.exe` at 08:05). This connection was initiated by `powershell.exe` running an encoded command right after a sketchy npm package install. Context matters."
+
+**Q: "We recommended resetting Jordan's password and revoking all his active sessions."**
+> **Your response:** "Since the initial access vector was a supply-chain package executed on the endpoint, not a credential compromise, resetting the password doesn't solve the root cause. Revoking sessions is a good precaution, but the primary containment must be isolating the device (`CS-DEV-01982`)."
+
+**Q: "The `npm cache verify` command at 09:22 was the attacker hiding their tracks!"**
+> **Your response:** "Look at the process lineage. The `npm cache verify` command was spawned by a clean `cmd.exe` process, not the malicious PowerShell script. It's a standard maintenance command. Always trace the parent process ID (PID) to see if an action belongs to the attacker's execution chain."
+
 ---
 
 ## 4. Joint Lessons Learned (Discussion Prompts)
