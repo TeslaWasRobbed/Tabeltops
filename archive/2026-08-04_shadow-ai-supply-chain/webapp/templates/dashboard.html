@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ team_name }} - SOC Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gray: { 850: '#1f2937', 900: '#111827', 950: '#030712' } } } } }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        .alert-item { transition: all 0.2s ease-in-out; }
+        .alert-item:hover { transform: translateX(4px); }
+        .alert-item.selected { border-left: 4px solid #3b82f6; background-color: #1f2937; }
+        @keyframes alertIn {
+            0%   { opacity: 0; transform: translateX(-12px); background-color: rgba(234,179,8,0.15); }
+            60%  { background-color: rgba(234,179,8,0.1); }
+            100% { opacity: 1; transform: translateX(0); background-color: transparent; }
+        }
+        .alert-new { animation: alertIn 0.6s ease-out forwards; }
+
+        /* Docs drawer */
+        #docs-drawer { transition: transform 0.3s ease; transform: translateX(100%); }
+        #docs-drawer.open { transform: translateX(0); }
+        #kql-workspace { transition: transform 0.3s ease; transform: translateY(100%); }
+        #kql-workspace.open { transform: translateY(0); }
+
+        /* Markdown prose styles */
+        .md-prose h1 { font-size: 1.25rem; font-weight: 700; color: #f9fafb; margin: 1rem 0 0.5rem; }
+        .md-prose h2 { font-size: 1.05rem; font-weight: 700; color: #e5e7eb; margin: 1.25rem 0 0.4rem; border-bottom: 1px solid #374151; padding-bottom: 0.25rem; }
+        .md-prose h3 { font-size: 0.9rem; font-weight: 600; color: #d1d5db; margin: 1rem 0 0.3rem; }
+        .md-prose p  { color: #9ca3af; font-size: 0.82rem; line-height: 1.6; margin-bottom: 0.6rem; }
+        .md-prose ul { list-style: disc; padding-left: 1.2rem; color: #9ca3af; font-size: 0.82rem; margin-bottom: 0.6rem; }
+        .md-prose li { margin-bottom: 0.2rem; line-height: 1.5; }
+        .md-prose code { font-family: monospace; font-size: 0.75rem; background: #111827; color: #34d399; padding: 0.1rem 0.3rem; border-radius: 3px; }
+        .md-prose pre  { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 0.75rem; overflow-x: auto; margin-bottom: 0.8rem; }
+        .md-prose pre code { background: none; padding: 0; color: #86efac; font-size: 0.72rem; line-height: 1.5; }
+        .md-prose table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-bottom: 0.8rem; }
+        .md-prose th { background: #1f2937; color: #d1d5db; padding: 0.4rem 0.6rem; text-align: left; border: 1px solid #374151; }
+        .md-prose td { color: #9ca3af; padding: 0.35rem 0.6rem; border: 1px solid #1e293b; }
+        .md-prose strong { color: #e5e7eb; font-weight: 600; }
+        .md-prose blockquote { border-left: 3px solid #3b82f6; padding-left: 0.75rem; color: #6b7280; font-size: 0.8rem; margin-bottom: 0.6rem; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-300 h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- Team Hint Banner -->
+    <div id="hint-banner" class="hidden bg-yellow-900/90 border-b border-yellow-700 text-yellow-200 px-6 py-2 shadow-lg z-40 flex items-center justify-center gap-2 shrink-0">
+        <span class="font-bold">💡 HINT:</span> <span id="hint-text"></span>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-gray-900 border-b border-gray-800 h-14 flex items-center justify-between px-6 shrink-0">
+        <div class="flex items-center gap-4">
+            <div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white">CS</div>
+            <h1 class="text-lg font-semibold text-white tracking-wide">{{ team_name }} <span class="text-gray-500 font-normal">| Defender XDR</span></h1>
+        </div>
+        <div class="flex items-center gap-6">
+            <div class="text-sm font-mono bg-gray-800 border border-gray-700 px-3 py-1 rounded flex items-center gap-2">
+                <span id="sim-status-dot" class="w-2 h-2 rounded-full bg-gray-600"></span>
+                <span class="text-gray-400 text-xs">INC TIME</span>
+                <span id="sim-clock" class="text-green-400 font-bold tracking-wider">--:--:--</span>
+            </div>
+            <div class="text-sm">
+                <span class="text-gray-500">Score:</span>
+                <span id="team-score" class="text-white font-bold text-lg ml-1">0</span>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-gray-400">
+                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span>Live</span>
+            </div>
+            <button onclick="toggleKql()" class="flex items-center gap-2 bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"/></svg>
+                KQL
+            </button>
+            <button onclick="toggleDocs()" class="flex items-center gap-2 bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 border border-blue-800 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                Docs
+            </button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Left Pane: Alert Queue -->
+        <div class="w-1/3 border-r border-gray-800 bg-gray-900 flex flex-col">
+            <div class="p-4 border-b border-gray-800 flex justify-between items-center bg-gray-900 z-10 shrink-0">
+                <h2 class="font-semibold text-white">Active Alerts</h2>
+                <span id="alert-count" class="bg-gray-800 text-xs px-2 py-1 rounded text-gray-400">0 Alerts</span>
+            </div>
+            <div id="alert-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <div id="empty-state" class="h-full flex flex-col items-center justify-center text-gray-500 space-y-3">
+                    <p class="text-sm">No active alerts. Waiting for facilitator...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Pane: Alert Details -->
+        <div class="w-2/3 bg-gray-950 flex flex-col overflow-y-auto relative">
+            
+            <!-- Toast Notification -->
+            <div id="toast" class="absolute top-4 right-4 bg-gray-800 border border-gray-700 text-white px-4 py-3 rounded shadow-lg transform transition-transform translate-y-[-150%] z-50 flex items-center gap-3">
+                <span id="toast-icon"></span>
+                <span id="toast-msg" class="text-sm font-medium"></span>
+            </div>
+
+            <div id="alert-details" class="p-8 hidden">
+                <!-- Header -->
+                <div class="flex items-start justify-between mb-6">
+                    <div>
+                        <div class="flex items-center gap-3 mb-2">
+                            <span id="detail-severity" class="px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider"></span>
+                            <span id="detail-time" class="text-xs text-gray-500"></span>
+                        </div>
+                        <h2 id="detail-title" class="text-2xl font-bold text-white mb-1"></h2>
+                        <p id="detail-id" class="text-sm text-blue-400 font-mono"></p>
+                    </div>
+                </div>
+
+                <!-- Description -->
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 mb-6">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Description</h3>
+                    <p id="detail-desc" class="text-gray-300 leading-relaxed"></p>
+                </div>
+
+                <!-- Action Panel (Classification) -->
+                <div class="bg-blue-900/10 border border-blue-900/30 rounded-lg p-5 mb-6">
+                    <h3 class="text-sm font-semibold text-blue-400 uppercase tracking-wider mb-4">Classify & Close Alert</h3>
+                    <p class="text-sm text-gray-400 mb-4">Investigate using KQL in Sentinel, then classify this alert to earn points. Incorrect classifications will result in a penalty.</p>
+                    <div class="flex gap-3">
+                        <button onclick="classifyAlert('TP')" class="flex-1 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-2 rounded font-medium transition-colors">
+                            True Positive (Escalate)
+                        </button>
+                        <button onclick="classifyAlert('BP')" class="flex-1 bg-yellow-900/30 hover:bg-yellow-900/50 text-yellow-400 border border-yellow-900/50 py-2 rounded font-medium transition-colors">
+                            Benign Positive (Expected)
+                        </button>
+                        <button onclick="classifyAlert('FP')" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 py-2 rounded font-medium transition-colors">
+                            False Positive (Unrelated)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Entities -->
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-5 mb-6">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Involved Entities</h3>
+                    <div id="detail-entities" class="space-y-2"></div>
+                </div>
+
+                <!-- Extended Properties -->
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+                    <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Extended Properties</h3>
+                    <pre id="detail-props" class="text-xs text-green-400 font-mono bg-gray-950 p-4 rounded overflow-x-auto border border-gray-800"></pre>
+                </div>
+
+            </div>
+            
+            <div id="no-selection" class="h-full flex flex-col items-center justify-center text-gray-600">
+                <svg class="w-16 h-16 mb-4 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <p class="text-lg">Select an alert from the queue to view details</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- KQL Workspace -->
+    <div id="kql-overlay" onclick="toggleKql()" class="hidden fixed inset-0 bg-black/50 z-40"></div>
+    <div id="kql-workspace" class="fixed left-0 right-0 bottom-0 h-[72vh] bg-gray-950 border-t border-emerald-900/50 z-50 shadow-2xl flex flex-col">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-gray-900 shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-emerald-700 rounded flex items-center justify-center font-bold text-white">K</div>
+                <div>
+                    <h2 class="text-white font-semibold leading-tight">Sentinel Logs</h2>
+                    <p id="kql-stream-status" class="text-xs text-gray-500">Loading workspace schema...</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="runKql()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-1.5 rounded text-sm font-semibold transition-colors">Run</button>
+                <button onclick="toggleKql()" class="text-gray-500 hover:text-gray-300 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex flex-1 min-h-0">
+            <aside class="w-72 border-r border-gray-800 bg-gray-900 overflow-y-auto p-3">
+                <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">Tables</div>
+                <div id="kql-schema" class="space-y-2"></div>
+            </aside>
+            <main class="flex-1 flex flex-col min-w-0">
+                <div class="grid grid-cols-3 gap-0 border-b border-gray-800 min-h-[190px]">
+                    <div class="col-span-2 p-3 border-r border-gray-800">
+                        <textarea id="kql-query" spellcheck="false" class="w-full h-full min-h-[160px] bg-gray-950 text-green-300 font-mono text-xs leading-5 border border-gray-800 rounded p-3 focus:outline-none focus:border-emerald-700 resize-none">SecurityAlert_CL
+| where Status in ("New", "InProgress") or IsIncident == 1
+| project TimeGenerated, DisplayName, AlertSeverity, SystemAlertId, Status, CompromisedEntity, Tactics, Techniques
+| order by TimeGenerated asc</textarea>
+                    </div>
+                    <div class="p-3 bg-gray-900">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-2">Query Starters</div>
+                        <div class="space-y-2">
+                            <button onclick="setKqlExample('alerts')" class="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300">Active alerts</button>
+                            <button onclick="setKqlExample('process')" class="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300">Endpoint process pivot</button>
+                            <button onclick="setKqlExample('network')" class="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300">Network connections</button>
+                            <button onclick="setKqlExample('timeline')" class="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300">File activity</button>
+                            <button onclick="setKqlExample('signin')" class="w-full text-left bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300">Risky sign-ins</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shrink-0">
+                    <div id="kql-result-meta" class="text-xs text-gray-500">Run a query to view results.</div>
+                    <div class="text-xs text-gray-600">Rows stream in as incident time advances.</div>
+                </div>
+                <div id="kql-results" class="flex-1 overflow-auto bg-gray-950">
+                    <div class="h-full flex items-center justify-center text-gray-600 text-sm">No query results yet.</div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Docs Drawer -->
+    <div id="docs-overlay" onclick="toggleDocs()" class="hidden fixed inset-0 bg-black/50 z-30"></div>
+    <div id="docs-drawer" class="fixed top-0 right-0 h-full w-[480px] bg-gray-900 border-l border-gray-800 z-40 flex flex-col shadow-2xl">
+        <!-- Drawer Header -->
+        <div class="flex items-center justify-between px-5 py-3 border-b border-gray-800 shrink-0">
+            <div class="flex gap-1">
+                <button onclick="switchTab('briefing')" id="tab-briefing"
+                    class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800">
+                    Briefing
+                </button>
+                <button onclick="switchTab('kql')" id="tab-kql"
+                    class="tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700">
+                    Starter KQL
+                </button>
+            </div>
+            <button onclick="toggleDocs()" class="text-gray-500 hover:text-gray-300 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <!-- Drawer Content -->
+        <div id="docs-content" class="flex-1 overflow-y-auto px-5 py-4 md-prose">
+            <div class="text-gray-600 text-sm text-center mt-16">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        const TEAM_ID = "{{ team_id }}";
+        let currentAlerts = [];
+        let currentAlertIds = new Set();
+        let selectedAlertId = null;
+
+        function getSeverityColor(severity) {
+            switch(severity.toLowerCase()) {
+                case 'high': return 'bg-red-600 text-white';
+                case 'medium': return 'bg-orange-500 text-white';
+                case 'low': return 'bg-yellow-500 text-black';
+                default: return 'bg-gray-600 text-white';
+            }
+        }
+
+        function showToast(msg, isSuccess) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            document.getElementById('toast-msg').innerText = msg;
+            
+            if(isSuccess) {
+                toast.className = "absolute top-4 right-4 bg-green-900/90 border border-green-700 text-white px-4 py-3 rounded shadow-lg transform transition-transform translate-y-0 z-50 flex items-center gap-3";
+                icon.innerHTML = '<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+            } else {
+                toast.className = "absolute top-4 right-4 bg-red-900/90 border border-red-700 text-white px-4 py-3 rounded shadow-lg transform transition-transform translate-y-0 z-50 flex items-center gap-3";
+                icon.innerHTML = '<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+            }
+
+            setTimeout(() => {
+                toast.classList.replace('translate-y-0', 'translate-y-[-150%]');
+            }, 4000);
+        }
+
+        async function pollState() {
+            try {
+                const res = await fetch(`/api/state/${TEAM_ID}`);
+                const data = await res.json();
+
+                document.getElementById('team-score').innerText = data.score;
+
+                // Update simulation clock
+                if (data.sim_time) {
+                    const t = data.sim_time.split('T')[1].replace('Z','');
+                    document.getElementById('sim-clock').innerText = t;
+                    const dot = document.getElementById('sim-status-dot');
+                    if (data.sim_running) {
+                        dot.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+                    } else {
+                        dot.className = 'w-2 h-2 rounded-full bg-yellow-500';
+                    }
+                }
+
+                if (data.hint) {
+                    document.getElementById('hint-text').innerText = data.hint;
+                    document.getElementById('hint-banner').classList.remove('hidden');
+                } else {
+                    document.getElementById('hint-banner').classList.add('hidden');
+                }
+
+                // Detect newly arrived alerts for flash animation
+                const newIds = new Set(data.alerts.map(a => a.SystemAlertId));
+                const incoming = data.alerts.filter(a => !currentAlertIds.has(a.SystemAlertId));
+
+                const alertsChanged = JSON.stringify([...newIds].sort()) !== JSON.stringify([...currentAlertIds].sort());
+                if (alertsChanged) {
+                    currentAlerts = data.alerts;
+                    currentAlertIds = newIds;
+                    renderAlerts(incoming.map(a => a.SystemAlertId));
+                    if (incoming.length > 0) {
+                        showToast(`${incoming.length} new alert${incoming.length > 1 ? 's' : ''} received`, true);
+                    }
+                }
+            } catch (e) {
+                console.error("Polling failed", e);
+            }
+        }
+
+        function renderAlerts(newIds = []) {
+            const list = document.getElementById('alert-list');
+            document.getElementById('alert-count').innerText = `${currentAlerts.length} Alert${currentAlerts.length !== 1 ? 's' : ''}`;
+            
+            if(currentAlerts.length === 0) {
+                list.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-gray-500 space-y-3"><p class="text-sm">No active alerts.</p></div>`;
+                document.getElementById('no-selection').classList.remove('hidden');
+                document.getElementById('alert-details').classList.add('hidden');
+                return;
+            }
+
+            list.innerHTML = '';
+            currentAlerts.forEach(alert => {
+                const div = document.createElement('div');
+                const isSelected = alert.SystemAlertId === selectedAlertId ? 'selected' : '';
+                const isNew = newIds.includes(alert.SystemAlertId) ? 'alert-new' : '';
+                div.className = `alert-item cursor-pointer p-3 rounded-lg border border-gray-800 bg-gray-900 hover:bg-gray-800 flex gap-3 ${isSelected} ${isNew}`;
+                div.onclick = () => selectAlert(alert, div);
+
+                div.innerHTML = `
+                    <div class="w-1.5 rounded-full ${getSeverityColor(alert.AlertSeverity)} shrink-0"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-start mb-1">
+                            <h4 class="text-sm font-medium text-gray-200 truncate pr-2">${alert.DisplayName}</h4>
+                        </div>
+                        <div class="flex items-center justify-between text-xs text-gray-400">
+                            <span class="truncate">${alert.CompromisedEntity || 'Unknown'}</span>
+                            <span class="whitespace-nowrap">${alert.TimeGenerated.split('T')[1].replace('Z','')}</span>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function selectAlert(alert, element) {
+            selectedAlertId = alert.SystemAlertId;
+            document.querySelectorAll('.alert-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+
+            document.getElementById('no-selection').classList.add('hidden');
+            document.getElementById('alert-details').classList.remove('hidden');
+
+            const sevBadge = document.getElementById('detail-severity');
+            sevBadge.className = `px-2.5 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getSeverityColor(alert.AlertSeverity)}`;
+            sevBadge.innerText = alert.AlertSeverity;
+
+            document.getElementById('detail-time').innerText = alert.TimeGenerated;
+            document.getElementById('detail-title').innerText = alert.DisplayName;
+            document.getElementById('detail-id').innerText = alert.SystemAlertId;
+            document.getElementById('detail-desc').innerText = alert.Description;
+
+            // Format Entities
+            const entContainer = document.getElementById('detail-entities');
+            entContainer.innerHTML = '';
+            try {
+                if(alert.Entities) {
+                    const entities = JSON.parse(alert.Entities);
+                    entities.forEach(ent => {
+                        const type = ent.Type || 'Unknown';
+                        const val = ent.Name || ent.Address || ent.Sha256 || JSON.stringify(ent);
+                        entContainer.innerHTML += `<div class="flex items-center gap-3 bg-gray-800 px-3 py-2 rounded border border-gray-700"><div><span class="text-xs text-gray-500 uppercase tracking-wide block leading-none">${type}</span><span class="text-sm text-gray-200 font-medium">${val}</span></div></div>`;
+                    });
+                }
+            } catch(e) { entContainer.innerHTML = `<span class="text-sm text-gray-500">${alert.Entities}</span>`; }
+
+            // Format Props
+            const propsEl = document.getElementById('detail-props');
+            try {
+                propsEl.innerText = alert.ExtendedProperties ? JSON.stringify(JSON.parse(alert.ExtendedProperties), null, 2) : "{}";
+            } catch(e) { propsEl.innerText = alert.ExtendedProperties; }
+        }
+
+        async function classifyAlert(classification) {
+            if(!selectedAlertId) return;
+            
+            try {
+                const res = await fetch('/api/classify', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        team_id: TEAM_ID,
+                        alert_id: selectedAlertId,
+                        classification: classification
+                    })
+                });
+                const data = await res.json();
+                
+                if(data.success) {
+                    showToast(data.message, data.points > 0);
+                    selectedAlertId = null;
+                    pollState(); // refresh immediately
+                } else {
+                    showToast(data.error, false);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- Fake KQL Workspace ---
+        let kqlOpen = false;
+        let lastSchemaCounts = {};
+        const kqlExamples = {
+            alerts: `SecurityAlert_CL
+| where Status in ("New", "InProgress") or IsIncident == 1
+| project TimeGenerated, DisplayName, AlertSeverity, SystemAlertId, Status, CompromisedEntity, Tactics, Techniques
+| order by TimeGenerated asc`,
+            process: `DeviceProcessEvents_CL
+| where DeviceName == "CS-DEV-01982"
+| where TimeGenerated between (datetime(2026-05-28 09:00:00) .. datetime(2026-05-28 09:30:00))
+| project TimeGenerated, ActionType, FileName, ProcessCommandLine, InitiatingProcessFileName, AccountUpn
+| order by TimeGenerated asc`,
+            network: `DeviceNetworkEvents_CL
+| where DeviceName == "CS-DEV-01982"
+| where TimeGenerated between (datetime(2026-05-28 08:00:00) .. datetime(2026-05-28 11:00:00))
+| project TimeGenerated, ActionType, RemoteIP, RemoteUrl, RemotePort, InitiatingProcessFileName, AdditionalFields
+| order by TimeGenerated asc`,
+            timeline: `DeviceFileEvents_CL
+| where DeviceName == "CS-DEV-01982"
+| where TimeGenerated between (datetime(2026-05-28 09:00:00) .. datetime(2026-05-28 11:00:00))
+| project TimeGenerated, ActionType, FileName, FolderPath, SensitivityLabel, InitiatingProcessFileName
+| order by TimeGenerated asc`,
+            signin: `SigninLogs_CL
+| where TimeGenerated between (datetime(2026-05-28 06:00:00) .. datetime(2026-05-28 11:00:00))
+| where IsRisky == 1 or ResultDescription == "Failure"
+| project TimeGenerated, UserPrincipalName, ResultDescription, IPAddress, AppDisplayName, RiskLevelDuringSignIn, RiskDetail, SessionId
+| order by TimeGenerated asc`
+        };
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        function setKqlExample(name) {
+            document.getElementById('kql-query').value = kqlExamples[name];
+            runKql();
+        }
+
+        function toggleKql() {
+            kqlOpen = !kqlOpen;
+            document.getElementById('kql-workspace').classList.toggle('open', kqlOpen);
+            document.getElementById('kql-overlay').classList.toggle('hidden', !kqlOpen);
+            if (kqlOpen) {
+                loadKqlSchema();
+            }
+        }
+
+        async function loadKqlSchema() {
+            try {
+                const res = await fetch('/api/kql/schema');
+                const data = await res.json();
+                const schema = document.getElementById('kql-schema');
+                const status = document.getElementById('kql-stream-status');
+                const t = data.sim_time.split('T')[1].replace('Z', '');
+                status.innerText = `${data.sim_running ? 'Streaming' : 'Paused'} at ${t}`;
+
+                schema.innerHTML = data.tables.map(table => {
+                    const previous = lastSchemaCounts[table.name] ?? table.visible_rows;
+                    const changed = table.visible_rows > previous;
+                    lastSchemaCounts[table.name] = table.visible_rows;
+                    const previewCols = table.columns.slice(0, 5).join(', ');
+                    const latest = table.latest_visible ? table.latest_visible.split('T')[1].replace('Z', '') : 'n/a';
+                    return `
+                        <button onclick="insertTableQuery('${table.name}')" class="w-full text-left border ${changed ? 'border-emerald-600 bg-emerald-900/20' : 'border-gray-800 bg-gray-950'} rounded p-2 hover:bg-gray-800 transition-colors">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-xs font-semibold text-gray-200">${table.name}</span>
+                                <span class="text-[11px] text-emerald-400">${table.visible_rows}/${table.total_rows}</span>
+                            </div>
+                            <div class="text-[11px] text-gray-500 mt-1 truncate">${escapeHtml(previewCols)}</div>
+                            <div class="text-[11px] text-gray-600 mt-1">latest ${latest}</div>
+                        </button>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error("KQL schema failed", e);
+            }
+        }
+
+        function insertTableQuery(tableName) {
+            document.getElementById('kql-query').value = `${tableName}
+| take 50`;
+            runKql();
+        }
+
+        async function runKql() {
+            const query = document.getElementById('kql-query').value;
+            const results = document.getElementById('kql-results');
+            const meta = document.getElementById('kql-result-meta');
+            meta.innerText = 'Running query...';
+            try {
+                const res = await fetch('/api/kql/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query})
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    meta.innerText = `Query error at ${data.sim_time.split('T')[1].replace('Z', '')}`;
+                    results.innerHTML = `<div class="m-4 border border-red-900/60 bg-red-950/30 text-red-300 rounded p-4 text-sm">${escapeHtml(data.error)}</div>`;
+                    return;
+                }
+                meta.innerText = `${data.row_count} row${data.row_count === 1 ? '' : 's'} returned at ${data.sim_time.split('T')[1].replace('Z', '')}`;
+                if (!data.rows.length) {
+                    results.innerHTML = '<div class="h-full flex items-center justify-center text-gray-600 text-sm">No rows matched at the current simulation time.</div>';
+                    return;
+                }
+                const headers = data.columns.map(col => `<th class="sticky top-0 bg-gray-900 border-b border-gray-800 px-3 py-2 text-left text-[11px] font-semibold text-gray-400">${escapeHtml(col)}</th>`).join('');
+                const rows = data.rows.map(row => `
+                    <tr class="border-b border-gray-900 hover:bg-gray-900/60">
+                        ${data.columns.map(col => `<td class="px-3 py-2 text-xs text-gray-300 font-mono max-w-[360px] truncate" title="${escapeHtml(row[col])}">${escapeHtml(row[col])}</td>`).join('')}
+                    </tr>
+                `).join('');
+                results.innerHTML = `<table class="min-w-full border-collapse"><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table>`;
+            } catch (e) {
+                meta.innerText = 'Query failed';
+                results.innerHTML = `<div class="m-4 border border-red-900/60 bg-red-950/30 text-red-300 rounded p-4 text-sm">${escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        setInterval(pollState, 5000);
+        setInterval(loadKqlSchema, 5000);
+        pollState();
+        loadKqlSchema();
+
+        // --- Docs Drawer ---
+        let docsOpen = false;
+        let activeTab = 'briefing';
+        const docCache = {};
+
+        async function loadDoc(name) {
+            if (docCache[name]) return docCache[name];
+            const res = await fetch(`/api/docs/${name}`);
+            const data = await res.json();
+            docCache[name] = data.content;
+            return data.content;
+        }
+
+        async function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById('tab-briefing').className = tab === 'briefing'
+                ? 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800'
+                : 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700';
+            document.getElementById('tab-kql').className = tab === 'kql'
+                ? 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-blue-900/40 text-blue-300 border border-blue-800'
+                : 'tab-btn px-4 py-1.5 rounded text-sm font-medium transition-colors bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700';
+            const docName = tab === 'briefing' ? 'briefing' : 'starter-kql';
+            const content = await loadDoc(docName);
+            document.getElementById('docs-content').innerHTML = marked.parse(content);
+        }
+
+        function toggleDocs() {
+            docsOpen = !docsOpen;
+            const drawer = document.getElementById('docs-drawer');
+            const overlay = document.getElementById('docs-overlay');
+            if (docsOpen) {
+                drawer.classList.add('open');
+                overlay.classList.remove('hidden');
+                if (!docCache[activeTab === 'briefing' ? 'briefing' : 'starter-kql']) {
+                    switchTab(activeTab);
+                }
+            } else {
+                drawer.classList.remove('open');
+                overlay.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
