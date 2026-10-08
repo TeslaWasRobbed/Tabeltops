@@ -1,0 +1,51 @@
+We have 90 days of logs/alerts in our fake SIEM - previous alerts closed by fake analyst
+Anita Job 
+
+previous alerts and tickets include:
+
+Louise Lonn clicked phishing link - LL Phish Alert notification is recorded in EmailEvents and sent
+to phishinginvestigations@creditsafe.com, which creates the FreshService investigation
+
+FreshService investigation - Account password reset the analyst doesn't
+realise this is a clickfix attack after credentials entered so do not see the remote access
+tool download
+
+Impossible travel (Birmingham) we usually see Tower Hamlets ExpressVPN - aler closed due to VPN usage
+
+Guest user invited to tenant (hradvisor@rnicrosoft.com) - Alert closed due to microsot account
+but is fake they don't realise
+
+Impossible travel (China) ExpressVPN - Alert closed due to VPN usage 
+
+Bulk download - Louise Lonn pesonal files (all files are personal in name) with 50 downloads
+APT are testing limits so they see 50 files generates an alert in Sentinel - LL has sentinel reader
+so would see -  alert closed due to personal files
+
+All of these previous alerts were closed as benign positive by the fake anayst so we can establish
+the APT has been on LL's device for at least 2 months.
+
+Alerts analysts see on the day (10:00-15:00):
+
+All main-story evidence finishes by 13:20. Teams consolidate their findings until 14:00, then use
+14:00-15:00 to complete and submit their incident report.
+
+Rare and potentially high-risk Office operations - at 10:30 a rule created with LL's compromised
+account forwards qualifying mail from a folder called "personal" to craiglonn@gmail.com
+
+Bulk download of files - the 50th file is downloaded at 11:20 and triggers the alert
+logs should show consisten downloads of 49 files to evade detections
+
+Archive created in suspicious location - LL has created archives in the temp folder which has
+generated an alert.
+
+Timeline of events
+
+over 2 months = Malicious email delivered, LL clicks link, sign in logs to exchange online/teams/etc
+same sessionID but no device populated and ExpressVPN, show password reset from ticket previous,
+and click fix attack
+
+Events on the day = Mail forward rule, sharepoint/onedrive search / archives created and sent to
+guest account, bulk download, purview access, E-disocery of payroll/PII, onedrive sync fail, 
+C2 traffic to 209.141.46.83 is present only as raw telemetry; analysts must pivot to the threat
+intelligence table themselves to determine the Storm-2077/TAG-100 association, registry persistence,
+and raw CiscoASA_CL events show unsuccessful exploitation attempts from the same IP against a patched ASA

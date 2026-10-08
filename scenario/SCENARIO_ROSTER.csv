@@ -1,0 +1,152 @@
+UserId,DisplayName,UserPrincipalName,Department,JobTitle,UserType,SimulationProfile
+N001,Louise Lonn,louise.lonn@creditsafe.com,Human Resources,HR Analyst,Member,primary_target
+N002,Bill Cottray,bill.cottray@creditsafe.com,Site Reliability Engineering,Lead SRE,Member,privileged_engineer
+N003,Emma Outgram,emma.outgram@creditsafe.com,Information Technology,M365 Engineer,Member,m365_admin
+N004,Damo Tom,damo.tom@creditsafe.com,Network Engineering,Network Manager,Member,network_admin
+N005,Barry Thendrews,barry.thendrews@creditsafe.com,Information Technology,M365 Engineer,Member,m365_admin
+N006,David Woofer,david.woofer@creditsafe.com,Platform Engineering,Platform Engineer,Member,privileged_engineer
+N007,Hannah Rees,hannah.rees@creditsafe.com,Security Operations,Security Operations Analyst,Member,security_analyst
+N008,Andrew Hancock,andrew.hancock@creditsafe.com,Engineering,Engineering Director,Member,executive
+N009,Mark Corridor,mark.corridor@creditsafe.com,Engineering,Engineering Director,Member,executive
+N010,Shilly Batford,shilly.batford@creditsafe.com,Service Delivery,Major Incident Manager,Member,incident_manager
+N011,Beth Edgar,beth.edgar@creditsafe.com,Procurement,Procurement Specialist,Member,procurement
+N012,Max Edgar,max.edgar@creditsafe.com,Platform Engineering,Platform Engineering Team Lead,Member,privileged_engineer
+N013,Aimee Flangan,aimee.flangan@creditsafe.com,Project Management,Project Manager,Member,knowledge_worker
+N014,James Dryington,james.dryington@creditsafe.com,Service Delivery,Service Delivery Team Lead,Member,service_lead
+N015,Adam Thomas,adam.thomas@creditsafe.com,Service Desk,Service Desk Analyst,Member,service_desk
+N016,Tom Blackburn,tom.blackburn@partner.example,Third Party,External Consultant,Guest,third_party
+N017,Rhydian Greggs,rhydian.greggs@creditsafe.com,Cloud Architecture,AWS Architect,Member,cloud_admin
+N018,Alex Williams,alex.williams@creditsafe.com,Governance Risk and Compliance,GRC Audit Lead,Member,auditor
+N019,Molly Ups,molly.ups@creditsafe.com,Human Resources,HR Adviser,Member,human_resources
+N020,Ayeesha Ahmed,ayeesha.ahmed@supplier.example,Third Party,Supplier Representative,Guest,third_party
+N021,Cato Syversen,cato.syversen@creditsafe.com,Executive,Chief Executive Officer,Member,executive
+S001,Olivia Mercer,olivia.mercer@creditsafe.com,Sales,Sales Team Lead,Member,sales_high_email
+S002,Daniel Price,daniel.price@creditsafe.com,Sales,Senior Account Executive,Member,sales_high_email
+S003,Sophie Ward,sophie.ward@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S004,Callum Foster,callum.foster@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S005,Priya Shah,priya.shah@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S006,Lewis Grant,lewis.grant@creditsafe.com,Sales,Sales Development Representative,Member,sales_high_email
+S007,Chloe Bennett,chloe.bennett@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S008,Jordan Reeves,jordan.reeves@creditsafe.com,Sales,Sales Development Representative,Member,sales_high_email
+S009,Naomi Clarke,naomi.clarke@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S010,Ethan Hughes,ethan.hughes@creditsafe.com,Sales,Senior Account Executive,Member,sales_high_email
+S011,Imogen Walsh,imogen.walsh@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S012,Nathan Cole,nathan.cole@creditsafe.com,Sales,Sales Development Representative,Member,sales_high_email
+S013,Grace Palmer,grace.palmer@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S014,Ryan Ellis,ryan.ellis@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S015,Freya Morgan,freya.morgan@creditsafe.com,Sales,Sales Development Representative,Member,sales_high_email
+S016,Samuel Brooks,samuel.brooks@creditsafe.com,Sales,Senior Account Executive,Member,sales_high_email
+S017,Leah Turner,leah.turner@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S018,Connor Hayes,connor.hayes@creditsafe.com,Sales,Sales Development Representative,Member,sales_high_email
+S019,Yasmin Patel,yasmin.patel@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+S020,George Russell,george.russell@creditsafe.com,Sales,Account Executive,Member,sales_high_email
+M001,Tessa Monroe,tessa.monroe@creditsafe.com,Marketing,Marketing Team Lead,Member,marketing
+M002,Finley Cross,finley.cross@creditsafe.com,Marketing,Campaign Manager,Member,marketing
+M003,Ruby Lawson,ruby.lawson@creditsafe.com,Marketing,Content Specialist,Member,marketing
+M004,Joel Barrett,joel.barrett@creditsafe.com,Marketing,Digital Marketing Specialist,Member,marketing
+M005,Nia Evans,nia.evans@creditsafe.com,Marketing,Events Coordinator,Member,marketing
+M006,Owen Spencer,owen.spencer@creditsafe.com,Marketing,Campaign Executive,Member,marketing
+M007,Maya Quinn,maya.quinn@creditsafe.com,Marketing,Content Specialist,Member,marketing
+M008,Harvey Dean,harvey.dean@creditsafe.com,Marketing,Digital Marketing Specialist,Member,marketing
+M009,Erin Cole,erin.cole@creditsafe.com,Marketing,Marketing Analyst,Member,marketing
+M010,Luke Bennett,luke.bennett@creditsafe.com,Marketing,Campaign Executive,Member,marketing
+G001,Aaron Bell,aaron.bell@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G002,Abigail Stone,abigail.stone@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G003,Adrian Moss,adrian.moss@creditsafe.com,Engineering,Senior Software Engineer,Member,engineering
+G004,Aisha Khan,aisha.khan@creditsafe.com,Engineering,QA Engineer,Member,engineering
+G005,Albert Fox,albert.fox@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G006,Alice Newman,alice.newman@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G007,Amelia Hart,amelia.hart@creditsafe.com,Engineering,QA Engineer,Member,engineering
+G008,Amir Hussain,amir.hussain@creditsafe.com,Engineering,Senior Software Engineer,Member,engineering
+G009,Amy Fletcher,amy.fletcher@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G010,Archie Lowe,archie.lowe@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G011,Ben Wallace,ben.wallace@creditsafe.com,Engineering,DevOps Engineer,Member,engineering
+G012,Bianca Ford,bianca.ford@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G013,Blake Morton,blake.morton@creditsafe.com,Engineering,QA Engineer,Member,engineering
+G014,Bradley King,bradley.king@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G015,Brooke Riley,brooke.riley@creditsafe.com,Engineering,DevOps Engineer,Member,engineering
+G016,Cameron Wells,cameron.wells@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G017,Carla Jennings,carla.jennings@creditsafe.com,Engineering,Senior Software Engineer,Member,engineering
+G018,Carmen Silva,carmen.silva@creditsafe.com,Engineering,QA Engineer,Member,engineering
+G019,Charlie Webb,charlie.webb@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G020,Charlotte Dale,charlotte.dale@creditsafe.com,Engineering,Software Engineer,Member,engineering
+G021,Chris Nolan,chris.nolan@creditsafe.com,Finance,Finance Manager,Member,finance
+G022,Clara Finch,clara.finch@creditsafe.com,Finance,Financial Analyst,Member,finance
+G023,Cody Mills,cody.mills@creditsafe.com,Finance,Accounts Assistant,Member,finance
+G024,Daisy Holland,daisy.holland@creditsafe.com,Finance,Financial Analyst,Member,finance
+G025,Damian Reed,damian.reed@creditsafe.com,Finance,Management Accountant,Member,finance
+G026,Darcy Scott,darcy.scott@creditsafe.com,Finance,Accounts Assistant,Member,finance
+G027,Dean Barker,dean.barker@creditsafe.com,Finance,Financial Analyst,Member,finance
+G028,Delilah Frost,delilah.frost@creditsafe.com,Finance,Payroll Specialist,Member,finance
+G029,Dominic Lane,dominic.lane@creditsafe.com,Finance,Management Accountant,Member,finance
+G030,Eleanor Briggs,eleanor.briggs@creditsafe.com,Finance,Accounts Assistant,Member,finance
+G031,Elliot Warren,elliot.warren@creditsafe.com,Finance,Financial Analyst,Member,finance
+G032,Elsie Chapman,elsie.chapman@creditsafe.com,Finance,Credit Controller,Member,finance
+G033,Emily Saunders,emily.saunders@creditsafe.com,Finance,Accounts Assistant,Member,finance
+G034,Eric Atkinson,eric.atkinson@creditsafe.com,Finance,Financial Analyst,Member,finance
+G035,Esme Gilbert,esme.gilbert@creditsafe.com,Finance,Credit Controller,Member,finance
+G036,Evan Rhodes,evan.rhodes@creditsafe.com,Customer Support,Customer Support Manager,Member,support
+G037,Faith Perry,faith.perry@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G038,Felix Mason,felix.mason@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G039,Fiona Blake,fiona.blake@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G040,Frankie Wood,frankie.wood@creditsafe.com,Customer Support,Senior Support Adviser,Member,support
+G041,Gabriella Holt,gabriella.holt@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G042,Gavin Shaw,gavin.shaw@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G043,Georgia Lamb,georgia.lamb@creditsafe.com,Customer Support,Senior Support Adviser,Member,support
+G044,Harriet Poole,harriet.poole@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G045,Hayden Cox,hayden.cox@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G046,Holly Wade,holly.wade@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G047,Isaac Morris,isaac.morris@creditsafe.com,Customer Support,Senior Support Adviser,Member,support
+G048,Isla Newton,isla.newton@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G049,Jack Porter,jack.porter@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G050,Jacob Flynn,jacob.flynn@creditsafe.com,Customer Support,Customer Support Adviser,Member,support
+G051,Jasmine Cooper,jasmine.cooper@creditsafe.com,Operations,Operations Manager,Member,operations
+G052,Jayden Hall,jayden.hall@creditsafe.com,Operations,Operations Analyst,Member,operations
+G053,Jennifer Marsh,jennifer.marsh@creditsafe.com,Operations,Operations Coordinator,Member,operations
+G054,Jesse Knight,jesse.knight@creditsafe.com,Operations,Operations Analyst,Member,operations
+G055,Jodie Cameron,jodie.cameron@creditsafe.com,Operations,Operations Coordinator,Member,operations
+G056,Jonathan Kemp,jonathan.kemp@creditsafe.com,Operations,Operations Analyst,Member,operations
+G057,Josephine Ball,josephine.ball@creditsafe.com,Operations,Operations Coordinator,Member,operations
+G058,Joshua Sims,joshua.sims@creditsafe.com,Operations,Operations Analyst,Member,operations
+G059,Julia Drake,julia.drake@creditsafe.com,Operations,Operations Coordinator,Member,operations
+G060,Kai Robinson,kai.robinson@creditsafe.com,Operations,Operations Analyst,Member,operations
+G061,Kara Doyle,kara.doyle@creditsafe.com,Legal,Legal Manager,Member,legal
+G062,Katie Osborne,katie.osborne@creditsafe.com,Legal,Legal Counsel,Member,legal
+G063,Kieran Hunt,kieran.hunt@creditsafe.com,Legal,Paralegal,Member,legal
+G064,Lara Booth,lara.booth@creditsafe.com,Legal,Legal Counsel,Member,legal
+G065,Lauren Bishop,lauren.bishop@creditsafe.com,Legal,Paralegal,Member,legal
+G066,Leo Gardner,leo.gardner@creditsafe.com,Procurement,Procurement Analyst,Member,procurement
+G067,Lily Pearson,lily.pearson@creditsafe.com,Procurement,Buyer,Member,procurement
+G068,Logan Banks,logan.banks@creditsafe.com,Procurement,Procurement Analyst,Member,procurement
+G069,Lucy Hamilton,lucy.hamilton@creditsafe.com,Procurement,Buyer,Member,procurement
+G070,Marcus Boyd,marcus.boyd@creditsafe.com,Procurement,Procurement Analyst,Member,procurement
+G071,Maria Costa,maria.costa@creditsafe.com,Information Technology,IT Support Engineer,Member,it_operations
+G072,Mason Harper,mason.harper@creditsafe.com,Information Technology,Systems Engineer,Member,it_operations
+G073,Megan Cross,megan.cross@creditsafe.com,Information Technology,IT Support Engineer,Member,it_operations
+G074,Miles Fuller,miles.fuller@creditsafe.com,Information Technology,Systems Engineer,Member,it_operations
+G075,Nadia Iqbal,nadia.iqbal@creditsafe.com,Information Technology,IT Support Engineer,Member,it_operations
+G076,Neil Sutton,neil.sutton@creditsafe.com,Information Technology,Systems Engineer,Member,it_operations
+G077,Nicole Barker,nicole.barker@creditsafe.com,Information Technology,IT Support Engineer,Member,it_operations
+G078,Noah Franklin,noah.franklin@creditsafe.com,Information Technology,Systems Engineer,Member,it_operations
+G079,Oliver Grant,oliver.grant@creditsafe.com,Information Technology,IT Support Engineer,Member,it_operations
+G080,Paige Hudson,paige.hudson@creditsafe.com,Information Technology,Systems Engineer,Member,it_operations
+G081,Patrick Cook,patrick.cook@creditsafe.com,Product,Product Manager,Member,product
+G082,Phoebe Armstrong,phoebe.armstrong@creditsafe.com,Product,Business Analyst,Member,product
+G083,Rachel Dean,rachel.dean@creditsafe.com,Product,Product Owner,Member,product
+G084,Reece Fleming,reece.fleming@creditsafe.com,Product,Business Analyst,Member,product
+G085,Rebecca Crossley,rebecca.crossley@creditsafe.com,Product,Product Manager,Member,product
+G086,Riley Benson,riley.benson@creditsafe.com,Product,Product Owner,Member,product
+G087,Robyn Matthews,robyn.matthews@creditsafe.com,Product,Business Analyst,Member,product
+G088,Rory Chandler,rory.chandler@creditsafe.com,Product,Product Manager,Member,product
+G089,Rosie Atwood,rosie.atwood@creditsafe.com,Product,Product Owner,Member,product
+G090,Rowan Mitchell,rowan.mitchell@creditsafe.com,Product,Business Analyst,Member,product
+G091,Sara Mahmood,sara.mahmood@creditsafe.com,Governance Risk and Compliance,GRC Analyst,Member,grc
+G092,Scott Bailey,scott.bailey@creditsafe.com,Governance Risk and Compliance,Risk Analyst,Member,grc
+G093,Sienna Curtis,sienna.curtis@creditsafe.com,Governance Risk and Compliance,Compliance Analyst,Member,grc
+G094,Simon Fowler,simon.fowler@creditsafe.com,Governance Risk and Compliance,GRC Analyst,Member,grc
+G095,Summer O'Neill,summer.oneill@creditsafe.com,Governance Risk and Compliance,Risk Analyst,Member,grc
+G096,Theo Watkins,theo.watkins@creditsafe.com,Human Resources,HR Coordinator,Member,human_resources
+G097,Victoria Nash,victoria.nash@creditsafe.com,Human Resources,Recruitment Adviser,Member,human_resources
+G098,William Kerr,william.kerr@creditsafe.com,Human Resources,HR Adviser,Member,human_resources
+G099,Yasir Ali,yasir.ali@creditsafe.com,Human Resources,People Operations Coordinator,Member,human_resources
+G100,Zoe Mackenzie,zoe.mackenzie@creditsafe.com,Human Resources,Recruitment Adviser,Member,human_resources

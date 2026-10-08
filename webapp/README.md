@@ -11,6 +11,9 @@ Historical exercise implementations remain under `archive/`.
 | `KUSTO_DATABASE` | `TabletopSIEM` | Exercise database |
 | `TABLETOP_SCENARIO_DIR` | Archived shadow-AI exercise | Active scenario package |
 | `PORT` | `5000` | Flask listening port |
+| `TABLETOP_STATE_DB` | `webapp/data/tabletop.db` | Persistent exercise clock, incident workflow, and audit trail |
+| `TABLETOP_INGESTION_MANIFEST` | unset | Host path to the generated Kusto batch manifest |
+| `KUSTO_CONTAINER_DATA_ROOT` | `/kustodata/tabletop` | Matching data path inside the Kusto container |
 
 ## Run locally
 
@@ -22,3 +25,36 @@ Open `http://127.0.0.1:5000/`.
 
 The analyst query API is `POST /api/kql/query`. Kusto management commands are
 blocked from the analyst workspace.
+
+## Exercise controls
+
+Open the **Facilitator** view to start, pause, resume, or reset the exercise.
+Starting establishes `T+00:00`; the first day-of alert is released at `T+00:05`.
+Alert state, owners, classifications, closure notes, and the analyst activity trail
+are persisted in SQLite, so refreshing the browser does not reset the exercise.
+
+## Build and load exercise data on the VM
+
+The Kusto container maps `/home/ubuntu/kusto-data` on the host to `/kustodata`.
+From the project root on the VM:
+
+```bash
+sudo mkdir -p /home/ubuntu/kusto-data/tabletop
+sudo chown -R ubuntu:ubuntu /home/ubuntu/kusto-data/tabletop
+python3 scenario/build_exercise_data.py --output /home/ubuntu/kusto-data/tabletop
+python3 -m webapp.ingestion initialize \
+  --manifest /home/ubuntu/kusto-data/tabletop/manifest.json \
+  --container-root /kustodata/tabletop
+```
+
+Then set these variables before starting Flask:
+
+```bash
+export TABLETOP_INGESTION_MANIFEST=/home/ubuntu/kusto-data/tabletop/manifest.json
+export KUSTO_CONTAINER_DATA_ROOT=/kustodata/tabletop
+```
+
+The initializer creates all 22 approved tables and ingests the historical
+batches. Once the facilitator starts the exercise, requests from the application
+ingest each due day-of batch. The SQLite ingestion ledger makes this idempotent
+across page refreshes and application restarts.

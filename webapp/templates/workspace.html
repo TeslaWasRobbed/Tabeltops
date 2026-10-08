@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Microsoft Sentinel | SOC Training</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body data-query-url="/api/kql/query">
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span class="simulation">TRAINING SIMULATION</span></div>
+    <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong><span id="next-alert"></span></div>
+    <div class="team">Alpha Team <span class="avatar">AT</span></div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="workspace-name"><strong>SOC Training</strong><small>TabletopSIEM</small></div>
+      <nav>
+        <button class="nav active" data-view="incidents"><span>⚠</span>Incidents <b id="nav-open-count">0</b></button>
+        <button class="nav" data-view="logs"><span>⌁</span>Logs</button>
+        <button class="nav" data-view="bookmarks"><span>☆</span>Bookmarks</button>
+        <button class="nav" data-view="freshservice"><span>▣</span>FreshService</button>
+        <div class="nav-divider"></div>
+        <button class="nav facilitator-link" data-view="facilitator"><span>⚙</span>Facilitator</button>
+      </nav>
+      <div class="connection"><span>● Connected</span><small>Connected to {{ kusto_database }}</small></div>
+    </aside>
+    <main>
+      <section id="view-incidents" class="view active">
+        <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Incidents</h1><p>Review, investigate, and resolve security incidents.</p></div><button id="refresh" class="secondary">↻ Refresh</button></div>
+        <div id="waiting-banner" class="waiting"><strong>Exercise has not started</strong><span>Historical incidents are available now. New activity will begin five minutes after the facilitator starts the exercise.</span></div>
+        <div class="metrics"><div><strong id="metric-open">0</strong><span>Open incidents</span></div><div><strong id="metric-new">0</strong><span>New</span></div><div><strong id="metric-high">0</strong><span>High severity</span></div><div><strong id="metric-closed">0</strong><span>Closed</span></div></div>
+        <div class="toolbar"><input id="incident-search" type="search" placeholder="Search incidents"><select id="severity-filter"><option value="all">All severities</option><option>High</option><option>Medium</option><option>Low</option></select><select id="status-filter"><option value="open" selected>New and Active</option><option>New</option><option>Active</option><option>Closed</option><option value="all">All statuses</option></select><label><input id="historical-filter" type="checkbox"> Historical only</label></div>
+        <div class="incident-layout">
+          <div class="table-scroll"><table><thead><tr><th>Severity</th><th>Incident</th><th>Status</th><th>Created</th><th>Owner</th></tr></thead><tbody id="incident-rows"></tbody></table></div>
+          <aside id="preview" class="preview"><div class="empty">Select an incident to view details.</div></aside>
+        </div>
+      </section>
+
+      <section id="view-detail" class="view detail-view">
+        <div class="pagehead"><div><button id="back-incidents" class="link">← Back to incidents</button><div id="detail-severity" class="severity"></div><h1 id="detail-title"></h1><div id="detail-id" class="mono"></div></div></div>
+        <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="activity">Activity log</button></div>
+        <div id="tab-overview" class="tab-panel active">
+          <div class="detail-grid"><div class="card"><h2>Description</h2><p id="detail-description"></p><h2>MITRE ATT&amp;CK tactics</h2><p id="detail-tactics"></p><h2>Entities</h2><div id="detail-entities" class="entities"></div></div>
+          <div class="card workflow"><h2>Incident workflow</h2><dl><dt>Status</dt><dd id="detail-status"></dd><dt>Owner</dt><dd id="detail-owner"></dd></dl><button id="activate" class="primary">Assign to me and set Active</button><button id="open-close" class="primary danger">Close incident</button><div id="readonly-closure" class="closure-summary"></div></div></div>
+        </div>
+        <div id="tab-activity" class="tab-panel"><div class="card"><h2>Analyst activity</h2><div id="activity-list"></div></div></div>
+      </section>
+
+      <section id="view-logs" class="view">
+        <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / General</div><h1>Logs</h1><p>Run KQL against the exercise workspace.</p></div><span class="tag">Connected to {{ kusto_database }}</span></div>
+        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
+| project Timestamp, DeviceName, ActionType, Details
+| order by Timestamp asc</textarea><div class="result-head"><strong>Results</strong><span id="query-meta">Ready</span></div><div id="query-results" class="query-results"><div class="empty">Run the query to view results.</div></div></div></div>
+      </section>
+
+      <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>Evidence saved during this investigation.</p></div></div><div class="content"><div class="empty-card">No bookmarks have been saved yet.</div></div></section>
+      <section id="view-freshservice" class="view"><div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets and approved changes.</p></div><span class="tag">Read-only evidence</span></div><div class="content"><div class="empty-card"><strong>Ticket interface prepared</strong><p>Scenario ticket data will be loaded with the exercise evidence pack.</p></div></div></section>
+
+      <section id="view-facilitator" class="view">
+        <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><span class="facilitator-badge">FACILITATOR ONLY</span></div>
+        <div class="facilitator-content">
+          <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
+          <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">0</strong><span>Active</span></div><div><strong id="fac-closed">0</strong><span>Closed today</span></div><div><strong id="fac-next">—</strong><span>Next alert</span></div></div>
+          <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved for facilitator review. No correctness or score is shown to participants.</p><div class="table-scroll fac-table"><table><thead><tr><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
+          <div class="card"><h2>Activity audit trail</h2><div id="fac-activity"></div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="modal-backdrop" class="modal-backdrop" aria-hidden="true">
+  <form id="close-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="close-title">
+    <div class="modal-head"><h2 id="close-title">Close incident</h2><button type="button" id="cancel-close" class="icon-button">×</button></div>
+    <label>Classification<select id="classification" required><option value="">Select a classification</option>{% for item in classifications %}<option>{{ item }}</option>{% endfor %}</select></label>
+    <label>Closure notes<textarea id="closure-notes" rows="6" maxlength="4000" required placeholder="Summarise the investigation, evidence reviewed, and reason for closure."></textarea></label>
+    <div id="close-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-close-2" class="secondary">Cancel</button><button type="submit" class="primary">Close incident</button></div>
+  </form>
+</div>
+<div id="toast" class="toast"></div>
+<script>window.APP_CONFIG={database:{{ kusto_database|tojson }}};</script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

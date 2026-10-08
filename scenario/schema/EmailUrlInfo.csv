@@ -1,0 +1,13 @@
+﻿ColumnName,ColumnOrdinal,DataType,ColumnType
+TenantId,0,"System.String",string
+NetworkMessageId,1,"System.String",string
+ReportId,2,"System.String",string
+TimeGenerated,3,"System.DateTime",datetime
+Timestamp,4,"System.DateTime",datetime
+Url,5,"System.String",string
+UrlLocation,6,"System.String",string
+UrlDomain,7,"System.String",string
+UrlChainId,8,"System.String",string
+UrlChainPosition,9,"System.Int32",int
+SourceSystem,10,"System.String",string
+Type,11,"System.String",string

