@@ -53,6 +53,17 @@ class DataBuildTests(unittest.TestCase):
         louise = next(row for row in identity_rows if row["AccountUPN"] == "louise.lonn@creditsafe.com")
         self.assertEqual(json.loads(louise["AssignedRoles"]), ["eDiscovery Manager", "Security Reader"])
 
+    def test_kusto_history_contains_believable_closed_incident_queue(self):
+        rows = build_rows(load_schemas())
+        incidents = rows[(-1, "SecurityIncident")]
+        self.assertGreaterEqual(len(incidents), 30)
+
+        relevant = {"1841", "1854", "1868", "1889", "1932"}
+        chronological = sorted(incidents, key=lambda item: item["TimeGenerated"], reverse=True)
+        positions = [index for index, item in enumerate(chronological) if item["IncidentNumber"] in relevant]
+        self.assertEqual(len(positions), len(relevant))
+        self.assertGreater(max(positions) - min(positions), len(relevant) - 1)
+
 
 class IngestionTests(unittest.TestCase):
     def setUp(self):

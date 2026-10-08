@@ -37,6 +37,37 @@ ROLE_PROFILES = {
     "cloud_architect": ["Azure Reader"],
 }
 
+# Routine closed incidents mirror the background queue shown in the web app.
+# Keeping them in Kusto prevents the five attack-related incidents from being
+# the only historical records analysts can find through Logs.
+HISTORICAL_NOISE = [
+    ("INC-1703", "Malware detected and quarantined on one device", "Medium", "Execution", "beth.edgar@creditsafe.com", "Endpoint protection quarantined the file; full scan clean.", "2026-08-16T08:42:00Z"),
+    ("INC-1711", "Unfamiliar sign-in properties", "Low", "Initial Access", "james.dryington@creditsafe.com", "Confirmed new corporate mobile and normal UK location.", "2026-08-18T12:16:00Z"),
+    ("INC-1720", "Multiple failed sign-ins followed by success", "Medium", "Credential Access", "callum.foster@creditsafe.com", "User confirmed password typo after returning from leave.", "2026-08-21T09:38:00Z"),
+    ("INC-1728", "Azure resource deletion activity", "Medium", "Impact", "david.woofer@creditsafe.com", "Approved decommission under platform change record.", "2026-08-24T15:27:00Z"),
+    ("INC-1734", "Inbox rule created to move messages", "Low", "Persistence", "ruby.lawson@creditsafe.com", "Rule moves newsletter responses to a campaign folder.", "2026-08-26T10:51:00Z"),
+    ("INC-1742", "High-volume SharePoint download", "Medium", "Collection", "alex.williams@creditsafe.com", "Approved evidence export for the quarterly audit.", "2026-08-29T14:05:00Z"),
+    ("INC-1751", "Risky sign-in from anonymous IP address", "High", "Initial Access", "imogen.walsh@creditsafe.com", "Corporate travel VPN confirmed by user and manager.", "2026-09-01T17:32:00Z"),
+    ("INC-1760", "User reported message as phishing", "Low", "Initial Access", "maya.fielding@creditsafe.com", "Bulk marketing message; sender and links validated.", "2026-09-03T11:19:00Z"),
+    ("INC-1769", "PowerShell launched with encoded command", "High", "Execution", "CS-SRE-W11-018", "Signed inventory script deployed by endpoint management.", "2026-09-07T07:58:00Z"),
+    ("INC-1777", "Sensitive information sent externally", "Medium", "Exfiltration", "procurement@creditsafe.com", "DLP blocked the message; no information left the tenant.", "2026-09-05T16:44:00Z"),
+    ("INC-1785", "Guest user added to a Teams site", "Low", "Persistence", "ayeesha.ahmed@external.example", "Supplier access matched the approved onboarding request.", "2026-09-13T13:20:00Z"),
+    ("INC-1794", "MFA rejected by user", "Medium", "Credential Access", "connor.hayes@creditsafe.com", "Stale prompt from the user's managed Outlook client.", "2026-09-16T09:12:00Z"),
+    ("INC-1802", "Suspicious archive file created", "Medium", "Collection", "owen.sykes@creditsafe.com", "Campaign artwork package created in the approved project path.", "2026-09-19T12:47:00Z"),
+    ("INC-1810", "Connection to newly registered domain", "Medium", "Command and Control", "CS-MKT-W11-033", "Destination belonged to a newly launched approved survey provider.", "2026-09-22T10:36:00Z"),
+    ("INC-1818", "Account added to privileged cloud role", "High", "Privilege Escalation", "rhydian.greggs@creditsafe.com", "Time-bound AWS architecture work approved in change record.", "2026-09-25T15:03:00Z"),
+    ("INC-1826", "Mass deletion in OneDrive", "Medium", "Impact", "aimee.flangan@creditsafe.com", "User reorganised a project folder; files recoverable in recycle bin.", "2026-09-29T08:29:00Z"),
+    ("INC-1835", "Impossible travel - United States", "Medium", "Initial Access", "daniel.price@creditsafe.com", "Concurrent mobile and corporate VPN sessions caused inaccurate location data.", "2026-10-02T18:11:00Z"),
+    ("INC-1940", "OAuth application granted mail permissions", "High", "Persistence", "tessa.monroe@creditsafe.com", "Approved marketing automation integration; publisher verified.", "2026-10-05T11:42:00Z"),
+    ("INC-1949", "Executable downloaded from cloud storage", "Medium", "Execution", "CS-ENG-W11-071", "Approved developer utility; hash and publisher validated.", "2026-10-09T14:18:00Z"),
+    ("INC-1957", "Outbound email volume anomaly", "Medium", "Exfiltration", "naomi.clarke@creditsafe.com", "Expected customer renewal campaign sent through Dynamics.", "2026-10-13T16:07:00Z"),
+    ("INC-1965", "Administrative account password reset", "Low", "Credential Access", "adam.thomas@creditsafe.com", "Service Desk reset followed verified identity process.", "2026-10-18T09:54:00Z"),
+    ("INC-1973", "Rare process communicating externally", "High", "Command and Control", "NET-ADM-012", "Network diagnostic binary and destination approved for testing.", "2026-10-23T13:31:00Z"),
+    ("INC-1981", "Files copied to removable media", "Medium", "Exfiltration", "CS-HR-W11-028", "Copy blocked by device-control policy; no successful transfer.", "2026-10-28T10:22:00Z"),
+    ("INC-1989", "New forwarding rule detected", "Medium", "Persistence", "freya.morgan@creditsafe.com", "Temporary cover arrangement approved by Sales management.", "2026-11-02T08:48:00Z"),
+    ("INC-1997", "Cloud account created then removed", "Low", "Persistence", "emma.outgram@creditsafe.com", "Short-lived account used for approved migration validation.", "2026-11-08T15:39:00Z"),
+]
+
 
 def stamp(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -130,16 +161,22 @@ def build_rows(schemas):
         add(rows,historical,"CiscoASA_CL",record(schemas,"CiscoASA_CL",TimeGenerated=stamp(when),DeviceName="CS-EDGE-ASA-01",DeviceVendor="Cisco",DeviceProduct="ASA",DeviceVersion="9.18(4)",EventType="Intrusion",EventSubType="ExploitAttempt",Severity="High",Action="Blocked",Result="Failure",Direction="Inbound",Protocol="TCP",SourceIP=C2,DestinationIP="198.51.100.10",DestinationPort="443",SignatureId="CVE-2020-3452",ThreatName="Path traversal attempt",BytesSent="312",BytesReceived="0"))
 
     historical_incidents = [
-        ("INC-1841", "Phishing link reported by Louise Lonn", september+timedelta(minutes=26), "Medium", "Initial Access", "Password reset completed. User confirmed the message was reported."),
-        ("INC-1854", "Impossible travel - Birmingham", datetime(2026,9,4,14,46,tzinfo=timezone.utc), "Medium", "Initial Access", "ExpressVPN activity considered expected."),
-        ("INC-1868", "Guest account invited to tenant", datetime(2026,9,6,11,31,tzinfo=timezone.utc), "Medium", "Persistence", "Microsoft adviser account; no further action required."),
-        ("INC-1889", "Impossible travel - China", datetime(2026,9,11,2,42,tzinfo=timezone.utc), "High", "Initial Access", "ExpressVPN use explains location."),
-        ("INC-1932", "Louise Lonn downloaded 50 personal files", datetime(2026,9,28,11,6,tzinfo=timezone.utc), "High", "Collection", "Filenames appear personal. Closed as user activity."),
+        ("INC-1841", "Phishing link reported by Louise Lonn", september+timedelta(minutes=26), "Medium", "Initial Access", LOUISE, "Password reset completed. User confirmed the message was reported.", "Anita Job", "BenignPositive", "SuspiciousButExpected"),
+        ("INC-1854", "Impossible travel - Birmingham", datetime(2026,9,4,14,46,tzinfo=timezone.utc), "Medium", "Initial Access", LOUISE, "ExpressVPN activity considered expected.", "Anita Job", "BenignPositive", "SuspiciousButExpected"),
+        ("INC-1868", "Guest account invited to tenant", datetime(2026,9,6,11,31,tzinfo=timezone.utc), "Medium", "Persistence", LOUISE, "Microsoft adviser account; no further action required.", "Anita Job", "BenignPositive", "SuspiciousButExpected"),
+        ("INC-1889", "Impossible travel - China", datetime(2026,9,11,2,42,tzinfo=timezone.utc), "High", "Initial Access", LOUISE, "ExpressVPN use explains location.", "Anita Job", "BenignPositive", "SuspiciousButExpected"),
+        ("INC-1932", "Louise Lonn downloaded 50 personal files", datetime(2026,9,28,11,6,tzinfo=timezone.utc), "High", "Collection", LOUISE, "Filenames appear personal. Closed as user activity.", "Anita Job", "BenignPositive", "SuspiciousButExpected"),
     ]
-    for incident_id,title,closed,severity,tactics,comment in historical_incidents:
+    owners = ("Hannah Rees", "Anita Job", "Marcus Vale", "Priya Shah")
+    for index, (incident_id,title,severity,tactics,entity,comment,closed_at) in enumerate(HISTORICAL_NOISE):
+        classification = "FalsePositive" if incident_id == "INC-1835" else "BenignPositive"
+        reason = "InaccurateData" if incident_id == "INC-1835" else "SuspiciousButExpected"
+        historical_incidents.append((incident_id,title,datetime.fromisoformat(closed_at.replace("Z", "+00:00")),severity,tactics,entity,comment,owners[index % len(owners)],classification,reason))
+
+    for incident_id,title,closed,severity,tactics,entity,comment,owner,classification,reason in historical_incidents:
         alert_id=f"ALT-{incident_id[4:]}"
-        add(rows,historical,"SecurityAlert",record(schemas,"SecurityAlert",TimeGenerated=stamp(closed-timedelta(minutes=20)),DisplayName=title,AlertName=title,AlertSeverity=severity,Description="Historical detection reviewed by SecOps.",ProviderName="Microsoft Defender XDR",VendorName="Microsoft",SystemAlertId=alert_id,IsIncident="true",StartTime=stamp(closed-timedelta(minutes=25)),EndTime=stamp(closed-timedelta(minutes=20)),Status="Resolved",CompromisedEntity=LOUISE,Tactics=tactics))
-        add(rows,historical,"SecurityIncident",record(schemas,"SecurityIncident",TimeGenerated=stamp(closed),IncidentName=incident_id,Title=title,Description="Historical incident retained for retrospective investigation.",Severity=severity,Status="Closed",Classification="BenignPositive",ClassificationReason="SuspiciousButExpected",ClassificationComment=comment,Owner=json.dumps({"assignedTo":"Anita Job"}),ProviderName="Microsoft Sentinel",ProviderIncidentId=incident_id,CreatedTime=stamp(closed-timedelta(minutes=30)),ClosedTime=stamp(closed),IncidentNumber=incident_id[4:],AlertIds=json.dumps([alert_id]),ModifiedBy="Anita Job"))
+        add(rows,historical,"SecurityAlert",record(schemas,"SecurityAlert",TimeGenerated=stamp(closed-timedelta(minutes=20)),DisplayName=title,AlertName=title,AlertSeverity=severity,Description="Historical detection reviewed by SecOps.",ProviderName="Microsoft Defender XDR",VendorName="Microsoft",SystemAlertId=alert_id,IsIncident="true",StartTime=stamp(closed-timedelta(minutes=25)),EndTime=stamp(closed-timedelta(minutes=20)),Status="Resolved",CompromisedEntity=entity,Tactics=tactics))
+        add(rows,historical,"SecurityIncident",record(schemas,"SecurityIncident",TimeGenerated=stamp(closed),IncidentName=incident_id,Title=title,Description="Historical incident retained for retrospective investigation.",Severity=severity,Status="Closed",Classification=classification,ClassificationReason=reason,ClassificationComment=comment,Owner=json.dumps({"assignedTo":owner}),ProviderName="Microsoft Sentinel",ProviderIncidentId=incident_id,CreatedTime=stamp(closed-timedelta(minutes=30)),ClosedTime=stamp(closed),IncidentNumber=incident_id[4:],AlertIds=json.dumps([alert_id]),ModifiedBy=owner))
 
     alert_catalog = [
         (5,"INC-2001","Admin user deleted an MFA phone from a user's account","Medium","Credential Access"),(10,"INC-2002","Email messages containing malicious URL deleted after delivery","Medium","Initial Access"),(20,"INC-2003","MFA rejected by user","Medium","Credential Access"),(30,"INC-2004","Rare and potentially high-risk Office operations","High","Persistence, Collection"),(40,"INC-2005","Azure VM Run Command executing a unique PowerShell script","Medium","Execution"),(50,"INC-2006","Outbound email exceeds 400","Medium","Exfiltration"),(57,"INC-2007","Files copied to USB - blocked by policy","Low","Exfiltration"),(65,"INC-2008","Guest users invited to tenant by new inviters","Medium","Persistence"),(85,"INC-2009","Louise Lonn downloaded 50 files","High","Collection"),(100,"INC-2010","Archive created in a suspicious temporary location","High","Collection, Exfiltration"),(110,"INC-2011","Account created and deleted in a short timeframe","Medium","Persistence"),(120,"INC-2012","Sensitive file upload to external Teams user blocked","Medium","Exfiltration"),(135,"INC-2013","User added to Intune_Local_Admins Entra ID group","High","Privilege Escalation"),(150,"INC-2014","External guest downloaded sensitive archives","High","Collection, Exfiltration"),(170,"INC-2015","Connection to a custom network indicator","Medium","Command and Control"),(190,"INC-2016","Registry-based persistence references SparkRAT","High","Persistence"),
