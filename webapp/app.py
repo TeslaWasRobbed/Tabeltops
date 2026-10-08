@@ -24,6 +24,7 @@ REPO_ROOT = APP_DIR.parent
 KUSTO_ENDPOINT = os.getenv("KUSTO_ENDPOINT", "http://127.0.0.1:8080").rstrip("/")
 KUSTO_DATABASE = os.getenv("KUSTO_DATABASE", "TabletopSIEM")
 SCENARIO_DIR = Path(os.getenv("TABLETOP_SCENARIO_DIR", str(REPO_ROOT / "scenario"))).resolve()
+FRESHSERVICE_PATH = SCENARIO_DIR / "freshservice_records.json"
 DEFAULT_STATE_DB = APP_DIR / "data" / "tabletop.db"
 EXERCISE_DURATION_SECONDS = 5 * 60 * 60
 STATE_LOCK = threading.RLock()
@@ -225,6 +226,13 @@ def call_kusto(path: str, csl: str, database: str | None = None) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def load_freshservice_records():
+    records = json.loads(FRESHSERVICE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(records, list) or any(not isinstance(item, dict) or not item.get("id") for item in records):
+        raise ValueError("FreshService records must be a list of objects with IDs.")
+    return records
+
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.update(
@@ -357,6 +365,19 @@ def create_app(test_config=None):
                 teams[team_id] = {"name": team_name, "incidents": get_visible_incidents(db, team_id)}
             activity = [dict(row) for row in db.execute("SELECT team_id,incident_id,actor,action,detail,created_at FROM activity ORDER BY id DESC")]
             return jsonify({"exercise": exercise_snapshot(db), "teams": teams, "activity": activity})
+
+    @app.get("/api/freshservice/records")
+    @require_roles("alpha", "bravo", "facilitator")
+    def freshservice_records():
+        fields = ("id", "type", "subject", "requester", "affected_user", "status", "priority", "assigned_to", "group", "created_at", "updated_at", "resolved_at", "assets", "related_records")
+        return jsonify({"records": [{key: item.get(key) for key in fields} for item in load_freshservice_records()]})
+
+    @app.get("/api/freshservice/records/<record_id>")
+    @require_roles("alpha", "bravo", "facilitator")
+    def freshservice_record(record_id):
+        record = next((item for item in load_freshservice_records() if item["id"].lower() == record_id.lower()), None)
+        if not record: return jsonify({"error": "FreshService record not found."}), 404
+        return jsonify({"record": record})
 
     @app.post("/api/kql/query")
     @require_roles("alpha", "bravo", "facilitator")

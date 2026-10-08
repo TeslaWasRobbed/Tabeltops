@@ -58,7 +58,14 @@
       </section>
 
       <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>Evidence saved during this investigation.</p></div></div><div class="content"><div class="empty-card">No bookmarks have been saved yet.</div></div></section>
-      <section id="view-freshservice" class="view"><div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets and approved changes.</p></div><span class="tag">Read-only evidence</span></div><div class="content"><div class="empty-card"><strong>Ticket interface prepared</strong><p>Scenario ticket data will be loaded with the exercise evidence pack.</p></div></div></section>
+      <section id="view-freshservice" class="view">
+        <div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets, service requests and approved changes.</p></div><span class="tag">Read-only evidence</span></div>
+        <div class="fs-toolbar"><input id="fs-search" type="search" placeholder="Search ID, subject, user, agent or asset"><select id="fs-type"><option value="all">All record types</option><option>Incident</option><option>Service request</option><option>Change</option></select><select id="fs-status"><option value="all">All statuses</option><option>Resolved</option><option>Closed</option><option>Implemented</option><option>Pending approval</option></select><button id="fs-refresh" class="secondary">↻ Refresh</button></div>
+        <div class="fs-layout">
+          <div class="table-scroll"><table><thead><tr><th>ID</th><th>Subject</th><th>Type</th><th>Status</th><th>Priority</th><th>Requester</th><th>Updated</th></tr></thead><tbody id="fs-rows"><tr><td colspan="7"><div class="empty">Open FreshService to load records.</div></td></tr></tbody></table></div>
+          <aside id="fs-detail" class="fs-detail"><div class="empty">Select a record to view its details and timeline.</div></aside>
+        </div>
+      </section>
 
       <section id="view-facilitator" class="view{{ ' active' if is_facilitator else '' }}">
         <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><span class="facilitator-badge">FACILITATOR ONLY</span></div>

@@ -31,6 +31,10 @@ workspace paths are `/alpha`, `/bravo`, and `/facilitator`.
 The analyst query API is `POST /api/kql/query`. Kusto management commands are
 blocked from the analyst workspace.
 
+FreshService records are loaded from `scenario/freshservice_records.json` and
+served as read-only application evidence. They are shared by both teams and do
+not require a Kusto rebuild when changed.
+
 ## Exercise controls
 
 Sign into the protected **Facilitator** workspace to start, pause, resume, or

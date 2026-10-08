@@ -72,6 +72,20 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_freshservice_records_are_searchable_read_only_evidence(self):
+        response = self.client.get("/api/freshservice/records")
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(payload["records"]), 14)
+        self.assertIn("INC-48217", {item["id"] for item in payload["records"]})
+        self.assertIn("CHG-76822", {item["id"] for item in payload["records"]})
+
+        detail = self.client.get("/api/freshservice/records/INC-48217").get_json()["record"]
+        self.assertEqual(detail["assigned_to"], "Anita Job")
+        self.assertEqual(detail["related_records"], ["SR-48226", "Sentinel INC-1841"])
+        self.assertTrue(any(entry["kind"] == "Resolution" for entry in detail["timeline"]))
+        self.assertEqual(self.client.patch("/api/freshservice/records/INC-48217", json={}).status_code, 405)
+
 class ExerciseWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.db_path = Path(__file__).parent / "test_state.db"
