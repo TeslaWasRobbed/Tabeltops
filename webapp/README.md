@@ -14,6 +14,10 @@ Historical exercise implementations remain under `archive/`.
 | `TABLETOP_STATE_DB` | `webapp/data/tabletop.db` | Persistent exercise clock, incident workflow, and audit trail |
 | `TABLETOP_INGESTION_MANIFEST` | unset | Host path to the generated Kusto batch manifest |
 | `KUSTO_CONTAINER_DATA_ROOT` | `/kustodata/tabletop` | Matching data path inside the Kusto container |
+| `TABLETOP_SECRET_KEY` | development fallback | Secret used to sign access sessions; set this on the VM |
+| `TABLETOP_ALPHA_CODE` | `alpha-training` | Team Alpha access code; override on the VM |
+| `TABLETOP_BRAVO_CODE` | `bravo-training` | Team Bravo access code; override on the VM |
+| `TABLETOP_FACILITATOR_CODE` | `facilitator-training` | Facilitator access code; override on the VM |
 
 ## Run locally
 
@@ -21,14 +25,18 @@ Historical exercise implementations remain under `archive/`.
 python -m flask --app webapp.app run --port 5000
 ```
 
-Open `http://127.0.0.1:5000/`.
+Open `http://127.0.0.1:5000/` and sign into the assigned workspace. Direct
+workspace paths are `/alpha`, `/bravo`, and `/facilitator`.
 
 The analyst query API is `POST /api/kql/query`. Kusto management commands are
 blocked from the analyst workspace.
 
 ## Exercise controls
 
-Open the **Facilitator** view to start, pause, resume, or reset the exercise.
+Sign into the protected **Facilitator** workspace to start, pause, resume, or
+reset the exercise. Team Alpha and Team Bravo share the exercise clock and
+Kusto evidence, but their incident status, owners, classifications, closure
+notes, and audit trails are stored independently.
 Starting establishes `T+00:00`; the first day-of alert is released at `T+00:05`.
 Alert state, owners, classifications, closure notes, and the analyst activity trail
 are persisted in SQLite, so refreshing the browser does not reset the exercise.

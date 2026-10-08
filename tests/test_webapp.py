@@ -9,14 +9,27 @@ from webapp.app import HISTORICAL_INCIDENTS, app, create_app
 class WebAppTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
+        self.client.post("/login", data={"role": "alpha", "code": "alpha-training"})
 
     def test_workspace_renders_kusto_query_client(self):
-        response = self.client.get("/")
+        response = self.client.get("/alpha")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Connected to TabletopSIEM", response.data)
         self.assertIn(b"/api/kql/query", response.data)
         self.assertIn(b"TestEvents", response.data)
+
+    def test_access_codes_protect_workspaces_and_apis(self):
+        anonymous = app.test_client()
+        self.assertEqual(anonymous.get("/").status_code, 200)
+        self.assertEqual(anonymous.get("/alpha").status_code, 200)
+        self.assertEqual(anonymous.post("/api/kql/query", json={"query": "IdentityInfo | take 1"}).status_code, 403)
+        self.assertEqual(anonymous.post("/login", data={"role": "facilitator", "code": "wrong"}).status_code, 401)
+
+        facilitator = app.test_client()
+        facilitator.post("/login", data={"role": "facilitator", "code": "facilitator-training"})
+        self.assertEqual(facilitator.get("/facilitator").status_code, 200)
+        self.assertEqual(facilitator.get("/api/incidents").status_code, 403)
 
     @patch("webapp.app.call_kusto")
     def test_query_results_are_normalized(self, call_kusto):
@@ -63,8 +76,18 @@ class ExerciseWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.db_path = Path(__file__).parent / "test_state.db"
         self.db_path.unlink(missing_ok=True)
-        self.test_app = create_app({"TESTING": True, "STATE_DB": str(self.db_path)})
+        self.test_app = create_app({
+            "TESTING": True,
+            "STATE_DB": str(self.db_path),
+            "SECRET_KEY": "test-secret",
+            "ACCESS_CODES": {"alpha": "alpha-code", "bravo": "bravo-code", "facilitator": "fac-code"},
+        })
         self.client = self.test_app.test_client()
+        self.bravo = self.test_app.test_client()
+        self.facilitator = self.test_app.test_client()
+        self.client.post("/login", data={"role": "alpha", "code": "alpha-code"})
+        self.bravo.post("/login", data={"role": "bravo", "code": "bravo-code"})
+        self.facilitator.post("/login", data={"role": "facilitator", "code": "fac-code"})
 
     def tearDown(self):
         self.db_path.unlink(missing_ok=True)
@@ -92,7 +115,7 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.assertGreater(max(positions) - min(positions), len(relevant) - 1)
 
     def test_start_then_timed_release_hides_future_alerts(self):
-        response = self.client.post("/api/facilitator/exercise/start", json={})
+        response = self.facilitator.post("/api/facilitator/exercise/start", json={})
         self.assertEqual(response.status_code, 200)
 
         self.fast_forward(5 * 60)
@@ -130,27 +153,49 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.assertEqual(closed.status_code, 200)
         self.assertEqual(closed.get_json()["incident"]["closure_notes"], "Evidence remains inconclusive.")
 
-        review = self.client.get("/api/facilitator/review").get_json()
+        review = self.facilitator.get("/api/facilitator/review").get_json()
         self.assertEqual(len(review["activity"]), 2)
 
     def test_reset_requires_confirmation_and_clears_day_state(self):
-        self.client.post("/api/facilitator/exercise/start", json={})
-        denied = self.client.post("/api/facilitator/exercise/reset", json={})
+        self.facilitator.post("/api/facilitator/exercise/start", json={})
+        denied = self.facilitator.post("/api/facilitator/exercise/reset", json={})
         self.assertEqual(denied.status_code, 400)
 
-        reset = self.client.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
+        reset = self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
         self.assertEqual(reset.status_code, 200)
         self.assertEqual(reset.get_json()["status"], "not_started")
 
     def test_pause_and_resume_preserve_elapsed_time(self):
-        self.client.post("/api/facilitator/exercise/start", json={})
-        paused = self.client.post("/api/facilitator/exercise/pause", json={})
+        self.facilitator.post("/api/facilitator/exercise/start", json={})
+        paused = self.facilitator.post("/api/facilitator/exercise/pause", json={})
         self.assertEqual(paused.status_code, 200)
         self.assertEqual(paused.get_json()["status"], "paused")
 
-        resumed = self.client.post("/api/facilitator/exercise/resume", json={})
+        resumed = self.facilitator.post("/api/facilitator/exercise/resume", json={})
         self.assertEqual(resumed.status_code, 200)
         self.assertEqual(resumed.get_json()["status"], "running")
+
+    def test_team_state_is_isolated_and_facilitator_controls_are_protected(self):
+        denied = self.client.post("/api/facilitator/exercise/start", json={})
+        self.assertEqual(denied.status_code, 403)
+
+        self.facilitator.post("/api/facilitator/exercise/start", json={})
+        self.fast_forward(5 * 60)
+        changed = self.client.patch(
+            "/api/incidents/INC-2001",
+            json={"status": "Active", "actor": "Team Alpha", "owner": "Team Alpha"},
+        )
+        self.assertEqual(changed.status_code, 200)
+
+        bravo_incidents = self.bravo.get("/api/incidents").get_json()["incidents"]
+        bravo_alert = next(item for item in bravo_incidents if item["id"] == "INC-2001")
+        self.assertEqual(bravo_alert["status"], "New")
+
+        review = self.facilitator.get("/api/facilitator/review").get_json()
+        alpha_alert = next(item for item in review["teams"]["alpha"]["incidents"] if item["id"] == "INC-2001")
+        bravo_alert = next(item for item in review["teams"]["bravo"]["incidents"] if item["id"] == "INC-2001")
+        self.assertEqual(alpha_alert["status"], "Active")
+        self.assertEqual(bravo_alert["status"], "New")
 
 
 if __name__ == "__main__":

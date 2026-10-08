@@ -33,7 +33,8 @@ Run locally with:
 python -m flask --app webapp.app run --port 5000
 ```
 
-The analyst workspace is then available at `http://127.0.0.1:5000/`.
+The access page is then available at `http://127.0.0.1:5000/`. Team Alpha,
+Team Bravo, and the facilitator use separate access codes and workspaces.
 
 The Kusto emulator defaults to `http://127.0.0.1:8080` using the `TabletopSIEM` database. See [webapp/README.md](webapp/README.md) for configuration.
 

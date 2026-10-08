@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Microsoft Sentinel | Exercise access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body class="access-page">
+  <main class="access-shell">
+    <div class="access-brand"><span class="waffle">⠿</span><strong>Microsoft Sentinel</strong><span class="simulation">TRAINING SIMULATION</span></div>
+    <section class="access-card">
+      <div class="crumb">SOC Training / TabletopSIEM</div>
+      <h1>Exercise workspace access</h1>
+      <p>Select your assigned workspace and enter its access code.</p>
+      <form action="/login" method="post">
+        <label>Workspace
+          <select name="role" required>
+            <option value="alpha"{{ ' selected' if role == 'alpha' else '' }}>Team Alpha</option>
+            <option value="bravo"{{ ' selected' if role == 'bravo' else '' }}>Team Bravo</option>
+            <option value="facilitator"{{ ' selected' if role == 'facilitator' else '' }}>Facilitator</option>
+          </select>
+        </label>
+        <label>Access code<input name="code" type="password" autocomplete="current-password" required autofocus></label>
+        {% if error %}<div class="access-error">{{ error }}</div>{% endif %}
+        <button class="primary" type="submit">Open workspace</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

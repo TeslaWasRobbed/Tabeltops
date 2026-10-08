@@ -6,28 +6,30 @@
   <title>Microsoft Sentinel | SOC Training</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
-<body data-query-url="/api/kql/query">
+<body data-query-url="/api/kql/query" data-role="{{ role }}" data-team="{{ team_id or '' }}">
 <div class="app">
   <header class="topbar">
     <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span class="simulation">TRAINING SIMULATION</span></div>
     <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong><span id="next-alert"></span></div>
-    <div class="team">Alpha Team <span class="avatar">AT</span></div>
+    <div class="team">{{ workspace_label }} <span class="avatar">{{ 'FC' if is_facilitator else ('TA' if team_id == 'alpha' else 'TB') }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
   </header>
   <div class="shell">
     <aside class="sidebar">
       <div class="workspace-name"><strong>SOC Training</strong><small>TabletopSIEM</small></div>
       <nav>
+        {% if not is_facilitator %}
         <button class="nav active" data-view="incidents"><span>⚠</span>Incidents <b id="nav-open-count">0</b></button>
         <button class="nav" data-view="logs"><span>⌁</span>Logs</button>
         <button class="nav" data-view="bookmarks"><span>☆</span>Bookmarks</button>
         <button class="nav" data-view="freshservice"><span>▣</span>FreshService</button>
-        <div class="nav-divider"></div>
-        <button class="nav facilitator-link" data-view="facilitator"><span>⚙</span>Facilitator</button>
+        {% else %}
+        <button class="nav facilitator-link active" data-view="facilitator"><span>⚙</span>Facilitator</button>
+        {% endif %}
       </nav>
       <div class="connection"><span>● Connected</span><small>Connected to {{ kusto_database }}</small></div>
     </aside>
     <main>
-      <section id="view-incidents" class="view active">
+      <section id="view-incidents" class="view{{ '' if is_facilitator else ' active' }}">
         <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Incidents</h1><p>Review, investigate, and resolve security incidents.</p></div><button id="refresh" class="secondary">↻ Refresh</button></div>
         <div id="waiting-banner" class="waiting"><strong>Exercise has not started</strong><span>Historical incidents are available now. New activity will begin five minutes after the facilitator starts the exercise.</span></div>
         <div class="metrics"><div><strong id="metric-open">0</strong><span>Open incidents</span></div><div><strong id="metric-new">0</strong><span>New</span></div><div><strong id="metric-high">0</strong><span>High severity</span></div><div><strong id="metric-closed">0</strong><span>Closed</span></div></div>
@@ -58,12 +60,12 @@
       <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>Evidence saved during this investigation.</p></div></div><div class="content"><div class="empty-card">No bookmarks have been saved yet.</div></div></section>
       <section id="view-freshservice" class="view"><div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets and approved changes.</p></div><span class="tag">Read-only evidence</span></div><div class="content"><div class="empty-card"><strong>Ticket interface prepared</strong><p>Scenario ticket data will be loaded with the exercise evidence pack.</p></div></div></section>
 
-      <section id="view-facilitator" class="view">
+      <section id="view-facilitator" class="view{{ ' active' if is_facilitator else '' }}">
         <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><span class="facilitator-badge">FACILITATOR ONLY</span></div>
         <div class="facilitator-content">
           <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
-          <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">0</strong><span>Active</span></div><div><strong id="fac-closed">0</strong><span>Closed today</span></div><div><strong id="fac-next">—</strong><span>Next alert</span></div></div>
-          <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved for facilitator review. No correctness or score is shown to participants.</p><div class="table-scroll fac-table"><table><thead><tr><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
+          <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div><div><strong id="fac-next">—</strong><span>Next alert</span></div></div>
+          <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved independently for Team Alpha and Team Bravo. No correctness or score is shown to participants.</p><div class="table-scroll fac-table"><table><thead><tr><th>Team</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
           <div class="card"><h2>Activity audit trail</h2><div id="fac-activity"></div></div>
         </div>
       </section>
@@ -81,7 +83,7 @@
   </form>
 </div>
 <div id="toast" class="toast"></div>
-<script>window.APP_CONFIG={database:{{ kusto_database|tojson }}};</script>
+<script>window.APP_CONFIG={database:{{ kusto_database|tojson }},role:{{ role|tojson }},team:{{ team_id|tojson }},workspaceLabel:{{ workspace_label|tojson }}};</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
