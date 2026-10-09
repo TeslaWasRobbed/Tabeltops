@@ -75,12 +75,25 @@
         <div class="facilitator-content">
           <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
           <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div></div>
-          <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved independently for Team Alpha and Team Bravo. No correctness or score is shown to participants.</p><div class="table-scroll fac-table"><table><thead><tr><th>Team</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
+          <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved independently for Team Alpha and Team Bravo. No correctness or score is shown to participants.</p><div class="fac-review-filters"><input id="fac-review-search" type="search" placeholder="Search incident or closure notes"><select id="fac-review-team"><option value="all">Both teams</option><option value="Team Alpha">Team Alpha</option><option value="Team Bravo">Team Bravo</option></select><select id="fac-review-status"><option value="all">All statuses</option><option>New</option><option>Active</option><option>Closed</option></select></div><div class="table-scroll fac-table"><table><thead><tr><th>Team</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
+          <div class="card"><div class="card-heading"><div><h2>Private facilitator observations</h2><p class="muted">Timestamped marking notes. These are never visible to either team.</p></div><button id="add-fac-observation" class="primary">+ Add observation</button></div><div id="fac-observations"><div class="empty-card">No facilitator observations recorded.</div></div></div>
           <div class="card"><h2>Activity audit trail</h2><div id="fac-activity"></div></div>
         </div>
       </section>
     </main>
   </div>
+</div>
+
+<div id="fac-observation-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="fac-observation-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="fac-observation-heading">
+    <div class="modal-head"><h2 id="fac-observation-heading">Add facilitator observation</h2><button type="button" id="cancel-fac-observation" class="icon-button">×</button></div>
+    <label>Category<select id="fac-observation-category" required><option value="">Select a category</option>{% for item in facilitator_observation_categories %}<option>{{ item }}</option>{% endfor %}</select></label>
+    <label>Team<select id="fac-observation-team"><option value="">Both teams / general</option><option value="alpha">Team Alpha</option><option value="bravo">Team Bravo</option></select></label>
+    <label>Linked incident<select id="fac-observation-incident"><option value="">No linked incident</option></select></label>
+    <label>Observation<textarea id="fac-observation-content" rows="7" maxlength="4000" required placeholder="Record what happened, why it matters, and any point to revisit during the debrief."></textarea></label>
+    <div id="fac-observation-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-fac-observation-2" class="secondary">Cancel</button><button type="submit" class="primary">Save observation</button></div>
+  </form>
 </div>
 
 <div id="journal-modal" class="modal-backdrop" aria-hidden="true">

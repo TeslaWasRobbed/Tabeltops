@@ -236,7 +236,7 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.assertEqual(exported.status_code, 200)
         self.assertEqual(exported.mimetype, "application/zip")
         with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
-            self.assertEqual(set(archive.namelist()), {"Team_Alpha_Report.html", "Team_Bravo_Report.html", "Incident_Decisions.csv", "Raw_Exercise_Data.json"})
+            self.assertEqual(set(archive.namelist()), {"Team_Alpha_Report.html", "Team_Bravo_Report.html", "Facilitator_Observations.html", "Incident_Decisions.csv", "Raw_Exercise_Data.json"})
             alpha_report = archive.read("Team_Alpha_Report.html").decode("utf-8")
             self.assertIn("MFA removal matches Service Desk request", alpha_report)
             self.assertIn("INC-2001", alpha_report)
@@ -275,6 +275,35 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
         self.assertEqual(self.client.get("/api/journal").get_json()["entries"], [])
         self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["activity"], [])
+
+    def test_facilitator_observations_are_private_exported_and_cleared_by_reset(self):
+        self.fast_forward(5 * 60)
+        denied = self.client.post("/api/facilitator/observations", json={
+            "category": "Observation", "content": "Participants must not create this note."
+        })
+        self.assertEqual(denied.status_code, 403)
+
+        created = self.facilitator.post("/api/facilitator/observations", json={
+            "category": "Coaching point",
+            "team_id": "alpha",
+            "incident_id": "INC-2001",
+            "content": "Team prioritised the alert before assigning an incident owner.",
+        })
+        self.assertEqual(created.status_code, 201)
+        review = self.facilitator.get("/api/facilitator/review").get_json()
+        self.assertEqual(len(review["observations"]), 1)
+        self.assertEqual(review["observations"][0]["team_id"], "alpha")
+        self.assertEqual(self.client.get("/api/facilitator/review").status_code, 403)
+
+        exported = self.facilitator.get("/api/facilitator/export")
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            observations = archive.read("Facilitator_Observations.html").decode("utf-8")
+            raw = json.loads(archive.read("Raw_Exercise_Data.json"))
+            self.assertIn("Team prioritised the alert", observations)
+            self.assertEqual(len(raw["facilitator_observations"]), 1)
+
+        self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
+        self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["observations"], [])
 
     @patch("webapp.app.call_kusto")
     def test_query_and_freshservice_steps_are_visible_to_facilitator(self, call_kusto):
