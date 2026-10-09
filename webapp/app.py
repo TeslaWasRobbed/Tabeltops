@@ -498,11 +498,11 @@ def create_app(test_config=None):
                 backup_db.close()
                 if integrity != "ok": raise ValueError(integrity)
                 modified = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
-                add("backup", "Clean-state backup", "pass", f"Latest backup is readable and intact: {latest.name} ({iso_time(modified)}).")
+                add("backup", "State backup", "pass", f"Latest backup is readable and intact: {latest.name} ({iso_time(modified)}).")
             except (OSError, sqlite3.Error, ValueError) as exc:
-                add("backup", "Clean-state backup", "fail", f"Latest backup {latest.name} failed its integrity check: {exc}")
+                add("backup", "State backup", "fail", f"Latest backup {latest.name} failed its integrity check: {exc}")
         else:
-            add("backup", "Clean-state backup", "warn", f"No database backup was found in {backup_dir}.")
+            add("backup", "State backup", "warn", f"No database backup was found in {backup_dir}.")
 
         failures = sum(item["status"] == "fail" for item in checks)
         warnings = sum(item["status"] == "warn" for item in checks)

@@ -107,3 +107,34 @@ Run the end-to-end health check at any time:
 It exits non-zero unless Flask, the scenario package, and the Kusto emulator are
 all available. Gunicorn access and error output is captured by the systemd
 journal and can be viewed with `sudo journalctl -u tabletop-siem`.
+
+## Automatic backups and restore
+
+Install and start the 15-minute backup timer:
+
+```bash
+sudo cp deployment/tabletop-siem-backup.service deployment/tabletop-siem-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now tabletop-siem-backup.timer
+```
+
+Each run uses SQLite's online backup API, verifies the resulting database, and
+stores it in `TABLETOP_BACKUP_DIR`. The newest 96 automatic `tabletop-state-*`
+snapshots are retained. Manually named clean-state and pre-restore backups are
+never pruned. Trigger and inspect a backup with:
+
+```bash
+sudo systemctl start tabletop-siem-backup.service
+sudo systemctl status tabletop-siem-backup.service --no-pager -l
+```
+
+To restore a selected snapshot, first stop the application. The restore tool
+validates the selected snapshot and creates a separate rollback copy of the
+current state before replacing it:
+
+```bash
+sudo systemctl stop tabletop-siem
+.venv/bin/python -m deployment.restore_state /home/ubuntu/tabletop-backups/SELECTED_BACKUP.db
+sudo systemctl start tabletop-siem
+.venv/bin/python deployment/health_check.py
+```
