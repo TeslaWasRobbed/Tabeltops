@@ -99,25 +99,6 @@ class WebAppTests(unittest.TestCase):
         self.assertTrue(any(entry["kind"] == "Resolution" for entry in detail["timeline"]))
         self.assertEqual(self.client.patch("/api/freshservice/records/INC-48217", json={}).status_code, 405)
 
-    @patch("webapp.app.call_kusto")
-    def test_query_export_is_limited_labelled_and_formula_safe(self, call_kusto):
-        call_kusto.return_value = {
-            "Tables": [{
-                "Columns": [{"ColumnName": "TimeGenerated"}, {"ColumnName": "Value"}],
-                "Rows": [["2026-09-03T09:08:00Z", "=SUM(1,1)"]] * 260,
-            }]
-        }
-        response = self.client.post("/api/kql/export", json={"query": "DeviceNetworkEvents | take 260"})
-        content = response.data.decode("utf-8-sig")
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "text/csv")
-        self.assertEqual(response.headers["X-Tabletop-Training-Data"], "true")
-        self.assertIn("TabletopSIEM TRAINING DATA EXPORT", content)
-        self.assertIn("Rows returned,260", content)
-        self.assertIn("Rows exported,250", content)
-        self.assertIn("'=SUM(1,1)", content)
-
 class ExerciseWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.db_path = Path(__file__).parent / "test_state.db"
@@ -377,6 +358,40 @@ class ExerciseWorkflowTests(unittest.TestCase):
         actions = [item["action"] for item in self.facilitator.get("/api/facilitator/review").get_json()["activity"]]
         self.assertIn("KQL query", actions)
         self.assertIn("FreshService record opened", actions)
+
+    @patch("webapp.app.call_kusto")
+    def test_selected_evidence_export_is_limited_labelled_and_audited(self, call_kusto):
+        row = {"TimeGenerated": "2026-09-03T09:08:00Z", "Value": "=SUM(1,1)"}
+        call_kusto.return_value = {
+            "Tables": [{
+                "Columns": [{"ColumnName": "TimeGenerated"}, {"ColumnName": "Value"}],
+                "Rows": [[row["TimeGenerated"], row["Value"]]] * 260,
+            }]
+        }
+        base = {
+            "query": "DeviceNetworkEvents | take 260",
+            "incident_id": "INC-1841",
+            "explanation": "Shows the repeated connection evidence.",
+        }
+        too_many = self.client.post("/api/kql/export", json={**base, "selected_rows": [row] * 51})
+        self.assertEqual(too_many.status_code, 400)
+
+        response = self.client.post("/api/kql/export", json={**base, "selected_rows": [row] * 50})
+        content = response.data.decode("utf-8-sig")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/csv")
+        self.assertEqual(response.headers["X-Tabletop-Training-Data"], "true")
+        self.assertIn("TabletopSIEM TRAINING DATA EXPORT", content)
+        self.assertIn("Linked incident,INC-1841", content)
+        self.assertIn("Rows returned,260", content)
+        self.assertIn("Rows exported,50", content)
+        self.assertIn("TABLETOP-TRAINING-DATA / TEAM ALPHA / EXP-", content)
+        self.assertIn("'=SUM(1,1)", content)
+
+        activity = self.facilitator.get("/api/facilitator/review").get_json()["activity"]
+        exported = next(item for item in activity if item["action"] == "KQL results exported")
+        self.assertEqual(exported["incident_id"], "INC-1841")
+        self.assertIn("Shows the repeated connection evidence.", exported["detail"])
 
 
 if __name__ == "__main__":

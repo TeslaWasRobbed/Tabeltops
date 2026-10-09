@@ -55,7 +55,7 @@
 
       <section id="view-logs" class="view">
         <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / General</div><h1>Logs</h1><p>Run KQL against the exercise workspace.</p></div><span class="tag">Connected to {{ kusto_database }}</span></div>
-        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><button id="export-query" class="secondary" disabled>⇩ Export results</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
+        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><button id="export-query" class="secondary" disabled>⇩ Export selected (0)</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
 | project Timestamp, DeviceName, ActionType, Details
 | order by Timestamp asc</textarea><div class="result-head"><strong>Results</strong><span id="query-meta">Ready</span></div><div id="query-results" class="query-results"><div class="empty">Run the query to view results.</div></div></div></div>
       </section>
@@ -101,6 +101,17 @@
     <div class="about-content"><p><strong>TabletopSIEM</strong> — Sentinel-shaped, entirely fictional and powered by suspicious quantities of hot chocolate.</p><dl class="props"><dt>Workspace</dt><dd>TabletopSIEM</dd><dt>Threat actors</dt><dd>Several</dd><dt>Packets</dt><dd>Adequately packet-shaped</dd><dt>Production tenants harmed</dt><dd>None</dd></dl></div>
     <div class="modal-actions"><button type="button" id="close-about-2" class="secondary">Close</button></div>
   </div>
+</div>
+
+<div id="export-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="export-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="export-heading">
+    <div class="modal-head"><h2 id="export-heading">Export selected evidence</h2><button type="button" id="cancel-export" class="icon-button">×</button></div>
+    <div class="export-summary"><strong id="export-row-count">0 rows selected</strong><span>Maximum 50 rows per export. This action is recorded for the facilitator.</span></div>
+    <label>Linked incident<select id="export-incident" required><option value="">Select an incident</option></select></label>
+    <label>Why this evidence matters<textarea id="export-explanation" rows="5" maxlength="1000" required placeholder="Briefly explain what these rows show and why they are relevant to the linked incident."></textarea></label>
+    <div id="export-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-export-2" class="secondary">Cancel</button><button type="submit" class="primary">Download evidence CSV</button></div>
+  </form>
 </div>
 
 <div id="fac-observation-modal" class="modal-backdrop" aria-hidden="true">

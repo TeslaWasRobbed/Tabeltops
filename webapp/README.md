@@ -42,10 +42,13 @@ timestamps. The facilitator can download a ZIP grading pack containing a
 printable HTML report for each team, a combined incident-decisions CSV, and the
 raw exercise audit data as JSON.
 
-After a successful KQL query, analysts can export up to 250 result rows as CSV.
-The export carries a visible training-data notice, UTC generation time, database,
-query hash, returned/exported counts, and spreadsheet-formula protection. The
-export action is retained in the team's facilitator-visible activity trail.
+After a successful KQL query, analysts may select up to 50 result rows and export
+them as evidence. An incident link and short explanation are mandatory, and
+exports have a 30-second cooldown. The CSV carries a visible per-team export ID
+and watermark on every row, UTC generation time, database, query hash,
+returned/exported counts, and spreadsheet-formula protection. The export ID,
+incident, query, explanation and row count are retained in the team's
+facilitator-visible activity trail.
 
 ## Exercise controls
 

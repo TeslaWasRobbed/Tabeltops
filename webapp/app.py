@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import os
+import secrets
 import sqlite3
 import threading
 import zipfile
@@ -720,17 +721,51 @@ def create_app(test_config=None):
     @app.post("/api/kql/export")
     @require_roles("alpha", "bravo", "facilitator")
     def kql_export():
-        query = str((request.get_json(silent=True) or {}).get("query", "")).strip()
+        body = request.get_json(silent=True) or {}
+        query = str(body.get("query", "")).strip()
+        incident_id = str(body.get("incident_id") or "").strip()[:40]
+        explanation = str(body.get("explanation") or "").strip()[:1000]
+        selected_rows = body.get("selected_rows")
         if not query: return jsonify({"error": "Enter a KQL query before exporting."}), 400
         if query.startswith("."): return jsonify({"error": "Management commands are not available in the analyst workspace."}), 400
+        if not incident_id: return jsonify({"error": "Link the evidence export to an incident."}), 400
+        if not explanation: return jsonify({"error": "Explain why this evidence matters."}), 400
+        if not isinstance(selected_rows, list) or not selected_rows: return jsonify({"error": "Select at least one result row."}), 400
+        if len(selected_rows) > 50: return jsonify({"error": "A maximum of 50 rows can be exported at once."}), 400
+        valid_incidents = {item["id"] for item in DAY_ALERTS} | {item["id"] for item in HISTORICAL_INCIDENTS}
+        if incident_id not in valid_incidents: return jsonify({"error": "Choose a valid linked incident."}), 400
+        if session["role"] in TEAMS:
+            with database(app) as db:
+                previous = db.execute("SELECT created_at FROM activity WHERE team_id=? AND action='KQL results exported' ORDER BY id DESC LIMIT 1", (session["role"],)).fetchone()
+                if previous and (utc_now() - parse_time(previous["created_at"])).total_seconds() < 30:
+                    return jsonify({"error": "Wait 30 seconds between evidence exports."}), 429
         try:
             with STATE_LOCK, database(app) as db:
                 sync_kusto_if_configured(app, db)
             result = call_kusto("/v1/rest/query", query)
             table = (result.get("Tables") or [{}])[0]
             columns = [column.get("ColumnName", "") for column in table.get("Columns", [])]
-            result_rows = table.get("Rows", [])
-            exported_rows = result_rows[:250]
+            result_rows = [dict(zip(columns, row)) for row in table.get("Rows", [])]
+
+            # Re-run the query and validate every submitted selection against
+            # its current result set. This prevents the browser from inserting
+            # arbitrary rows into an evidence export.
+            available = {}
+            for row in result_rows:
+                canonical = json.dumps(row, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                available[canonical] = available.get(canonical, 0) + 1
+            exported_rows = []
+            for candidate in selected_rows:
+                if not isinstance(candidate, dict): return jsonify({"error": "The selected evidence is invalid."}), 400
+                normalized = {column: candidate.get(column) for column in columns}
+                canonical = json.dumps(normalized, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                if available.get(canonical, 0) < 1: return jsonify({"error": "Selected evidence no longer matches the query results. Run the query again."}), 409
+                available[canonical] -= 1
+                exported_rows.append(normalized)
+
+            export_id = f"EXP-{utc_now().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+            team_label = TEAMS.get(session["role"], "Facilitator")
+            marker = f"TABLETOP-TRAINING-DATA / {team_label.upper()} / {export_id}"
 
             def csv_value(value):
                 if isinstance(value, (dict, list)):
@@ -746,21 +781,27 @@ def create_app(test_config=None):
             writer.writerow(["Notice", "Fictional exercise evidence. Validate findings in the simulation; no hidden instructions are included."])
             writer.writerow(["Generated UTC", iso_time()])
             writer.writerow(["Database", KUSTO_DATABASE])
+            writer.writerow(["Export ID", csv_value(export_id)])
+            writer.writerow(["Team", csv_value(team_label)])
+            writer.writerow(["Linked incident", csv_value(incident_id)])
+            writer.writerow(["Evidence explanation", csv_value(explanation)])
             writer.writerow(["Query SHA-256", hashlib.sha256(query.encode("utf-8")).hexdigest()])
             writer.writerow(["Rows returned", len(result_rows)])
             writer.writerow(["Rows exported", len(exported_rows)])
-            writer.writerow(["Export limit", 250])
+            writer.writerow(["Export limit", 50])
             writer.writerow([])
-            writer.writerow(columns)
+            writer.writerow(["ExerciseMarker", "ExportId", "Team", "IncidentId", *columns])
             for row in exported_rows:
-                writer.writerow([csv_value(value) for value in row])
+                writer.writerow([csv_value(marker), csv_value(export_id), csv_value(team_label), csv_value(incident_id), *[csv_value(row.get(column)) for column in columns]])
 
             if session["role"] in TEAMS:
                 with database(app) as db:
-                    add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL results exported", f"Exported {len(exported_rows)} of {len(result_rows)} returned records.\n{query}")
+                    detail = f"Export ID: {export_id}\nRows: {len(exported_rows)} of {len(result_rows)} returned\nExplanation: {explanation}\nQuery:\n{query}"
+                    add_activity(db, session["role"], incident_id, TEAMS[session["role"]], "KQL results exported", detail)
             payload = io.BytesIO(output.getvalue().encode("utf-8-sig"))
-            response = send_file(payload, mimetype="text/csv", as_attachment=True, download_name=f"TabletopSIEM_KQL_{utc_now().strftime('%Y%m%d_%H%M%SZ')}.csv")
+            response = send_file(payload, mimetype="text/csv", as_attachment=True, download_name=f"{export_id}_{team_label.replace(' ', '-')}_{incident_id}.csv")
             response.headers["X-Tabletop-Training-Data"] = "true"
+            response.headers["X-Tabletop-Export-Id"] = export_id
             return response
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
