@@ -286,6 +286,7 @@ def create_app(test_config=None):
         STATE_DB=os.getenv("TABLETOP_STATE_DB", str(DEFAULT_STATE_DB)),
         INGESTION_MANIFEST=os.getenv("TABLETOP_INGESTION_MANIFEST"),
         KUSTO_CONTAINER_DATA_ROOT=os.getenv("KUSTO_CONTAINER_DATA_ROOT", "/kustodata/tabletop"),
+        BACKUP_DIR=os.getenv("TABLETOP_BACKUP_DIR", "/home/ubuntu/tabletop-backups"),
     )
     if test_config: app.config.update(test_config)
     init_db(app)
@@ -408,6 +409,104 @@ def create_app(test_config=None):
             activity = [dict(row) for row in db.execute("SELECT team_id,incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity ORDER BY id DESC")]
             observations = [dict(row) for row in db.execute("SELECT * FROM facilitator_observations ORDER BY id DESC")]
             return jsonify({"exercise": exercise_snapshot(db), "teams": teams, "activity": activity, "observations": observations})
+
+    @app.get("/api/facilitator/readiness")
+    @require_roles("facilitator")
+    def facilitator_readiness():
+        checks = []
+
+        def add(check_id, label, status, detail):
+            checks.append({"id": check_id, "label": label, "status": status, "detail": detail})
+
+        manifest = None
+        manifest_path = app.config.get("INGESTION_MANIFEST")
+        if not manifest_path:
+            add("manifest", "Scenario manifest", "fail", "TABLETOP_INGESTION_MANIFEST is not configured.")
+        else:
+            try:
+                manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+                schemas = manifest.get("schemas") or {}; batches = manifest.get("batches") or []
+                if not schemas or not batches: raise ValueError("schemas or batches are empty")
+                add("manifest", "Scenario manifest", "pass", f"{len(schemas)} tables and {len(batches)} ingestion batches are configured.")
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                add("manifest", "Scenario manifest", "fail", f"The configured manifest is unavailable or invalid: {exc}")
+
+        try:
+            response = call_kusto("/v1/rest/mgmt", ".show tables | project TableName")
+            table = (response.get("Tables") or [{}])[0]
+            columns = [item.get("ColumnName", "") for item in table.get("Columns", [])]
+            names = {str(dict(zip(columns, row)).get("TableName") or dict(zip(columns, row)).get("Name") or "") for row in table.get("Rows", [])}
+            expected = set((manifest or {}).get("schemas", {}))
+            missing = sorted(expected - names)
+            if missing:
+                add("kusto", "Kusto workspace", "fail", f"Connected to {KUSTO_DATABASE}, but {len(missing)} expected tables are missing: {', '.join(missing[:6])}{'…' if len(missing) > 6 else ''}")
+            else:
+                add("kusto", "Kusto workspace", "pass", f"Connected to {KUSTO_DATABASE}; all {len(expected)} expected tables are present.")
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError, KeyError, TypeError, ValueError) as exc:
+            add("kusto", "Kusto workspace", "fail", f"Kusto could not be validated: {exc}")
+
+        with database(app) as db:
+            snapshot = exercise_snapshot(db)
+            state_counts = {
+                "decisions": db.execute("SELECT COUNT(*) FROM incident_state").fetchone()[0],
+                "activity": db.execute("SELECT COUNT(*) FROM activity").fetchone()[0],
+                "bookmarks": db.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0],
+                "journal": db.execute("SELECT COUNT(*) FROM journal_entries").fetchone()[0],
+                "observations": db.execute("SELECT COUNT(*) FROM facilitator_observations").fetchone()[0],
+            }
+            dirty = sum(state_counts.values())
+            if snapshot["status"] == "not_started" and snapshot["elapsed_seconds"] == 0 and dirty == 0:
+                add("state", "Clean exercise state", "pass", "Clock is at T+00:00:00 with no team decisions, notes, bookmarks or facilitator observations.")
+            else:
+                add("state", "Clean exercise state", "fail", f"State is {snapshot['status']} at T+{snapshot['elapsed_seconds']} seconds with {dirty} saved exercise records. Reset before a live exercise.")
+
+            expected_history = [item for item in (manifest or {}).get("batches", []) if item.get("offset_seconds", 0) < 0]
+            ledger_exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ingestion_ledger'").fetchone()
+            if not manifest or not ledger_exists:
+                add("history", "Historical data baseline", "fail", "The historical ingestion ledger could not be validated.")
+            else:
+                actual_ids = {row[0] for row in db.execute("SELECT batch_id FROM ingestion_ledger")}
+                expected_ids = {item["id"] for item in expected_history}
+                missing_history = expected_ids - actual_ids
+                unexpected = actual_ids - expected_ids
+                if missing_history or unexpected:
+                    add("history", "Historical data baseline", "fail", f"Expected {len(expected_ids)} historical batches; found {len(actual_ids)} ledger entries. Reset or initialise the dataset.")
+                else:
+                    rows = sum(int(item.get("rows", 0)) for item in expected_history)
+                    add("history", "Historical data baseline", "pass", f"All {len(expected_ids)} historical batches are recorded ({rows} rows).")
+
+        defaults = {"alpha": "alpha-training", "bravo": "bravo-training", "facilitator": "facilitator-training"}
+        insecure = [role for role, value in app.config["ACCESS_CODES"].items() if not value or hmac.compare_digest(value, defaults[role])]
+        if insecure:
+            add("access", "Exercise access codes", "fail", f"Custom access codes are required for: {', '.join(insecure)}.")
+        else:
+            add("access", "Exercise access codes", "pass", "Custom codes are configured for both teams and the facilitator.")
+
+        try:
+            records = load_freshservice_records()
+            add("freshservice", "FreshService evidence", "pass", f"{len(records)} read-only service records are available.")
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            add("freshservice", "FreshService evidence", "fail", f"FreshService evidence could not be loaded: {exc}")
+
+        backup_dir = Path(app.config["BACKUP_DIR"])
+        backups = sorted(backup_dir.glob("*.db"), key=lambda item: item.stat().st_mtime, reverse=True) if backup_dir.is_dir() else []
+        if backups:
+            latest = backups[0]
+            try:
+                backup_db = sqlite3.connect(f"file:{latest.as_posix()}?mode=ro", uri=True)
+                integrity = backup_db.execute("PRAGMA integrity_check").fetchone()[0]
+                backup_db.close()
+                if integrity != "ok": raise ValueError(integrity)
+                modified = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
+                add("backup", "Clean-state backup", "pass", f"Latest backup is readable and intact: {latest.name} ({iso_time(modified)}).")
+            except (OSError, sqlite3.Error, ValueError) as exc:
+                add("backup", "Clean-state backup", "fail", f"Latest backup {latest.name} failed its integrity check: {exc}")
+        else:
+            add("backup", "Clean-state backup", "warn", f"No database backup was found in {backup_dir}.")
+
+        failures = sum(item["status"] == "fail" for item in checks)
+        warnings = sum(item["status"] == "warn" for item in checks)
+        return jsonify({"ready": failures == 0, "checked_at": iso_time(), "failures": failures, "warnings": warnings, "checks": checks})
 
     @app.post("/api/facilitator/observations")
     @require_roles("facilitator")

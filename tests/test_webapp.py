@@ -306,6 +306,44 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["observations"], [])
 
     @patch("webapp.app.call_kusto")
+    def test_readiness_validates_clean_deployment_and_is_facilitator_only(self, call_kusto):
+        call_kusto.return_value = {
+            "Tables": [{"Columns": [{"ColumnName": "TableName"}], "Rows": [["IdentityInfo"]]}]
+        }
+        self.assertEqual(self.client.get("/api/facilitator/readiness").status_code, 403)
+
+        root = Path(__file__).parent / "readiness_fixture"
+        backup_dir = root / "backups"
+        root.mkdir(exist_ok=True); backup_dir.mkdir(exist_ok=True)
+        manifest_path = root / "manifest.json"
+        backup_path = backup_dir / "ready.db"
+        try:
+            manifest_path.write_text(json.dumps({
+                "schemas": {"IdentityInfo": [{"name": "TimeGenerated", "type": "datetime"}]},
+                "batches": [
+                    {"id": "history-1", "table": "IdentityInfo", "offset_seconds": -1, "rows": 2, "path": "history.csv"},
+                    {"id": "day-1", "table": "IdentityInfo", "offset_seconds": 300, "rows": 1, "path": "day.csv"},
+                ],
+            }), encoding="utf-8")
+            backup = sqlite3.connect(backup_path); backup.execute("CREATE TABLE state(value TEXT)"); backup.commit(); backup.close()
+            db = sqlite3.connect(self.db_path)
+            db.execute("CREATE TABLE ingestion_ledger (batch_id TEXT PRIMARY KEY, table_name TEXT, offset_seconds INTEGER, row_count INTEGER, ingested_at TEXT)")
+            db.execute("INSERT INTO ingestion_ledger VALUES('history-1','IdentityInfo',-1,2,'2026-10-09T10:00:00Z')")
+            db.commit(); db.close()
+            self.test_app.config.update(INGESTION_MANIFEST=str(manifest_path), BACKUP_DIR=str(backup_dir))
+
+            payload = self.facilitator.get("/api/facilitator/readiness").get_json()
+            self.assertTrue(payload["ready"])
+            self.assertEqual(payload["failures"], 0)
+            self.assertTrue(all(item["status"] == "pass" for item in payload["checks"]))
+            self.assertEqual({item["id"] for item in payload["checks"]}, {"manifest", "kusto", "state", "history", "access", "freshservice", "backup"})
+        finally:
+            manifest_path.unlink(missing_ok=True)
+            backup_path.unlink(missing_ok=True)
+            backup_dir.rmdir()
+            root.rmdir()
+
+    @patch("webapp.app.call_kusto")
     def test_query_and_freshservice_steps_are_visible_to_facilitator(self, call_kusto):
         call_kusto.return_value = {"Tables": [{"Columns": [{"ColumnName": "AccountUPN"}], "Rows": [["louise.lonn@creditsafe.com"]]}]}
         self.client.post("/api/kql/query", json={"query": "IdentityInfo | take 1"})
