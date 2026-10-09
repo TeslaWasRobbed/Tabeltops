@@ -23,6 +23,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"TestEvents", response.data)
         self.assertIn(b"Investigation context", response.data)
         self.assertIn(b"Related FreshService records", response.data)
+        self.assertIn(b'id="connection-banner"', response.data)
+        self.assertIn(b'id="reset-confirmation"', response.data)
         self.assertNotIn(b"Next alert", response.data)
         self.assertNotIn(b'id="next-alert"', response.data)
 

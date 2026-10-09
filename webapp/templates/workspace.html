@@ -13,6 +13,7 @@
     <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong></div>
     <div class="team">{{ workspace_label }} <span class="avatar">{{ 'FC' if is_facilitator else ('TA' if team_id == 'alpha' else 'TB') }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
   </header>
+  <div id="connection-banner" class="connection-banner" role="status" aria-live="polite" aria-hidden="true"><strong>Connection interrupted</strong><span id="connection-message">Attempting to reconnect…</span></div>
   <div class="shell">
     <aside class="sidebar">
       <div class="workspace-name"><strong>SOC Training</strong><small>TabletopSIEM</small></div>
@@ -83,6 +84,15 @@
       </section>
     </main>
   </div>
+</div>
+
+<div id="reset-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="reset-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="reset-heading">
+    <div class="modal-head"><h2 id="reset-heading">Reset the exercise?</h2><button type="button" id="cancel-reset" class="icon-button">×</button></div>
+    <label>Confirmation<p class="muted">This permanently clears day-of decisions, bookmarks, journal entries, facilitator observations and investigation activity. Type <strong>RESET</strong> to continue.</p><input id="reset-confirmation" autocomplete="off" required placeholder="Type RESET"></label>
+    <div id="reset-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-reset-2" class="secondary">Cancel</button><button type="submit" class="danger">Reset exercise</button></div>
+  </form>
 </div>
 
 <div id="fac-observation-modal" class="modal-backdrop" aria-hidden="true">
