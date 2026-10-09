@@ -35,6 +35,12 @@ FreshService records are loaded from `scenario/freshservice_records.json` and
 served as read-only application evidence. They are shared by both teams and do
 not require a Kusto rebuild when changed.
 
+Successful and failed KQL queries, opened FreshService records, incident status
+changes, and evidence bookmarks are recorded per team with exercise-relative
+timestamps. The facilitator can download a ZIP grading pack containing a
+printable HTML report for each team, a combined incident-decisions CSV, and the
+raw exercise audit data as JSON.
+
 ## Exercise controls
 
 Sign into the protected **Facilitator** workspace to start, pause, resume, or

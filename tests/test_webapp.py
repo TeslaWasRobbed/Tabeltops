@@ -1,5 +1,7 @@
 import unittest
+import io
 import sqlite3
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -210,6 +212,42 @@ class ExerciseWorkflowTests(unittest.TestCase):
         bravo_alert = next(item for item in review["teams"]["bravo"]["incidents"] if item["id"] == "INC-2001")
         self.assertEqual(alpha_alert["status"], "Active")
         self.assertEqual(bravo_alert["status"], "New")
+
+    def test_bookmarks_are_team_isolated_exported_and_cleared_by_reset(self):
+        self.fast_forward(5 * 60)
+        created = self.client.post("/api/bookmarks", json={
+            "title": "MFA removal matches Service Desk request",
+            "notes": "The target and timestamp correlate with the approved lost-phone ticket.",
+            "query": "AuditLogs | where OperationName contains 'authentication phone'",
+            "incident_id": "INC-2001",
+            "evidence": {"row_count": 1, "columns": ["OperationName"], "rows": [{"OperationName": "Delete user authentication phone method"}]},
+        })
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(len(self.client.get("/api/bookmarks").get_json()["bookmarks"]), 1)
+        self.assertEqual(self.bravo.get("/api/bookmarks").get_json()["bookmarks"], [])
+
+        exported = self.facilitator.get("/api/facilitator/export")
+        self.assertEqual(exported.status_code, 200)
+        self.assertEqual(exported.mimetype, "application/zip")
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            self.assertEqual(set(archive.namelist()), {"Team_Alpha_Report.html", "Team_Bravo_Report.html", "Incident_Decisions.csv", "Raw_Exercise_Data.json"})
+            alpha_report = archive.read("Team_Alpha_Report.html").decode("utf-8")
+            self.assertIn("MFA removal matches Service Desk request", alpha_report)
+            self.assertIn("INC-2001", alpha_report)
+
+        self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
+        self.assertEqual(self.client.get("/api/bookmarks").get_json()["bookmarks"], [])
+        self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["activity"], [])
+
+    @patch("webapp.app.call_kusto")
+    def test_query_and_freshservice_steps_are_visible_to_facilitator(self, call_kusto):
+        call_kusto.return_value = {"Tables": [{"Columns": [{"ColumnName": "AccountUPN"}], "Rows": [["louise.lonn@creditsafe.com"]]}]}
+        self.client.post("/api/kql/query", json={"query": "IdentityInfo | take 1"})
+        self.client.get("/api/freshservice/records/INC-48217")
+
+        actions = [item["action"] for item in self.facilitator.get("/api/facilitator/review").get_json()["activity"]]
+        self.assertIn("KQL query", actions)
+        self.assertIn("FreshService record opened", actions)
 
 
 if __name__ == "__main__":

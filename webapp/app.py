@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import json
 import hmac
+import csv
+import io
 import os
 import sqlite3
 import threading
+import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
+from html import escape as html_escape
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from webapp.ingestion import reset_dataset, sync_due
 
@@ -179,6 +183,14 @@ def init_db(app):
             db.execute("""INSERT INTO activity(id,team_id,incident_id,actor,action,detail,created_at)
                 SELECT id,'alpha',incident_id,actor,action,detail,created_at FROM activity_single_team""")
             db.execute("DROP TABLE activity_single_team")
+        activity_columns = {row[1] for row in db.execute("PRAGMA table_info(activity)")}
+        if "elapsed_seconds" not in activity_columns:
+            db.execute("ALTER TABLE activity ADD COLUMN elapsed_seconds INTEGER NOT NULL DEFAULT 0")
+        db.execute("""CREATE TABLE IF NOT EXISTS bookmarks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT NOT NULL,
+            title TEXT NOT NULL, notes TEXT NOT NULL, query TEXT NOT NULL,
+            evidence_json TEXT NOT NULL, incident_id TEXT,
+            created_at TEXT NOT NULL, elapsed_seconds INTEGER NOT NULL DEFAULT 0)""")
         db.execute("INSERT OR IGNORE INTO exercise_state(singleton,status,updated_at,accumulated_seconds) VALUES(1,'not_started',?,0)", (iso_time(),))
 
 
@@ -200,6 +212,12 @@ def materialize_incident(definition, state=None):
         item.update({key: state[key] for key in ("status", "owner", "classification", "closure_notes", "acknowledged_at", "closed_at")})
     item["alerts"] = 1
     return item
+
+
+def add_activity(db, team_id, incident_id, actor, action, detail):
+    now = iso_time()
+    elapsed = exercise_snapshot(db)["elapsed_seconds"]
+    db.execute("INSERT INTO activity(team_id,incident_id,actor,action,detail,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?,?)", (team_id, incident_id or "", actor, action, detail, now, elapsed))
 
 
 def get_visible_incidents(db, team_id, include_future=False):
@@ -314,7 +332,7 @@ def create_app(test_config=None):
                 if str((request.get_json(silent=True) or {}).get("confirmation", "")) != "RESET": return jsonify({"error": "Type RESET to confirm."}), 400
                 if app.config.get("INGESTION_MANIFEST"):
                     reset_dataset(db, app.config["INGESTION_MANIFEST"], app.config["KUSTO_CONTAINER_DATA_ROOT"])
-                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state")
+                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state"); db.execute("DELETE FROM bookmarks")
                 db.execute("UPDATE exercise_state SET status='not_started',started_at=NULL,updated_at=?,accumulated_seconds=0 WHERE singleton=1", (iso_time(now),))
             return jsonify(exercise_snapshot(db))
 
@@ -331,7 +349,7 @@ def create_app(test_config=None):
     def incident_activity(incident_id):
         team_id = session["role"]
         with database(app) as db:
-            rows = db.execute("SELECT actor,action,detail,created_at FROM activity WHERE team_id=? AND incident_id=? ORDER BY id DESC", (team_id, incident_id)).fetchall()
+            rows = db.execute("SELECT actor,action,detail,created_at,elapsed_seconds FROM activity WHERE team_id=? AND incident_id=? ORDER BY id DESC", (team_id, incident_id)).fetchall()
             return jsonify({"activity": [dict(row) for row in rows]})
 
     @app.patch("/api/incidents/<incident_id>")
@@ -352,7 +370,7 @@ def create_app(test_config=None):
             closed_at = now if requested_status == "Closed" else None
             db.execute("""INSERT INTO incident_state(team_id,incident_id,status,owner,classification,closure_notes,acknowledged_at,closed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(team_id,incident_id) DO UPDATE SET status=excluded.status,owner=excluded.owner,classification=excluded.classification,closure_notes=excluded.closure_notes,acknowledged_at=excluded.acknowledged_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at""", (team_id, incident_id, requested_status, owner, classification, notes, acknowledged, closed_at, now))
             detail = f"Status changed from {current_status} to {requested_status}." + (f" Classification: {classification}. Notes: {notes}" if classification else "")
-            db.execute("INSERT INTO activity(team_id,incident_id,actor,action,detail,created_at) VALUES(?,?,?,?,?,?)", (team_id, incident_id, actor, "Status changed", detail, now))
+            add_activity(db, team_id, incident_id, actor, "Status changed", detail)
             state = db.execute("SELECT * FROM incident_state WHERE team_id=? AND incident_id=?", (team_id, incident_id)).fetchone()
             return jsonify({"incident": materialize_incident(definition, state)})
 
@@ -363,8 +381,102 @@ def create_app(test_config=None):
             teams = {}
             for team_id, team_name in TEAMS.items():
                 teams[team_id] = {"name": team_name, "incidents": get_visible_incidents(db, team_id)}
-            activity = [dict(row) for row in db.execute("SELECT team_id,incident_id,actor,action,detail,created_at FROM activity ORDER BY id DESC")]
+            activity = [dict(row) for row in db.execute("SELECT team_id,incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity ORDER BY id DESC")]
             return jsonify({"exercise": exercise_snapshot(db), "teams": teams, "activity": activity})
+
+    @app.get("/api/facilitator/export")
+    @require_roles("facilitator")
+    def facilitator_export():
+        with database(app) as db:
+            snapshot = exercise_snapshot(db)
+            package = {"generated_at": iso_time(), "exercise": snapshot, "teams": {}}
+            for team_id, team_name in TEAMS.items():
+                day_incidents = [item for item in get_visible_incidents(db, team_id) if not item["historical"]]
+                bookmark_rows = db.execute("SELECT * FROM bookmarks WHERE team_id=? ORDER BY id", (team_id,)).fetchall()
+                team_bookmarks = []
+                for row in bookmark_rows:
+                    item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
+                    team_bookmarks.append(item)
+                steps = [dict(row) for row in db.execute("SELECT incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity WHERE team_id=? ORDER BY id", (team_id,))]
+                package["teams"][team_id] = {"name": team_name, "incidents": day_incidents, "bookmarks": team_bookmarks, "steps": steps}
+
+        def elapsed_label(seconds):
+            seconds = max(0, int(seconds or 0)); return f"T+{seconds//3600:02}:{seconds%3600//60:02}:{seconds%60:02}"
+
+        def team_html(team):
+            incident_rows = "".join(
+                f"<tr><td>{html_escape(item['id'])}</td><td>{html_escape(item['title'])}</td><td>{html_escape(item['status'])}</td><td>{html_escape(item['owner'])}</td><td>{html_escape(item.get('classification') or '—')}</td><td>{html_escape(item.get('closure_notes') or '—')}</td><td>{html_escape(item.get('acknowledged_at') or '—')}</td><td>{html_escape(item.get('closed_at') or '—')}</td></tr>"
+                for item in team["incidents"]
+            ) or '<tr><td colspan="8">No day-of incidents were released.</td></tr>'
+            bookmark_blocks = "".join(
+                f"<section><h3>{html_escape(item['title'])}</h3><p><b>{elapsed_label(item['elapsed_seconds'])}</b> · Linked incident: {html_escape(item.get('incident_id') or 'None')}</p><p>{html_escape(item['notes'])}</p><h4>KQL</h4><pre>{html_escape(item['query'])}</pre><h4>Saved evidence preview</h4><pre>{html_escape(json.dumps(item['evidence'], indent=2, ensure_ascii=False))}</pre></section>"
+                for item in team["bookmarks"]
+            ) or "<p>No bookmarks were saved.</p>"
+            step_rows = "".join(
+                f"<tr><td>{elapsed_label(item['elapsed_seconds'])}</td><td>{html_escape(item['created_at'])}</td><td>{html_escape(item['action'])}</td><td>{html_escape(item.get('incident_id') or '—')}</td><td><pre>{html_escape(item['detail'])}</pre></td></tr>"
+                for item in team["steps"]
+            ) or '<tr><td colspan="5">No analyst activity was recorded.</td></tr>'
+            return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html_escape(team['name'])} exercise report</title><style>body{{font:14px Arial,sans-serif;color:#17202a;margin:32px}}h1{{margin-bottom:4px}}.meta{{color:#586674}}table{{width:100%;border-collapse:collapse;margin:14px 0 28px}}th,td{{padding:8px;border:1px solid #ccd3da;text-align:left;vertical-align:top}}th{{background:#edf2f6}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;margin:4px 0}}section{{padding:12px;margin:12px 0;border:1px solid #ccd3da}}@media print{{body{{margin:12mm}}}}</style></head><body><h1>{html_escape(team['name'])} — Tabletop investigation report</h1><p class="meta">Generated {html_escape(package['generated_at'])} · Exercise state {html_escape(snapshot['status'])} · {elapsed_label(snapshot['elapsed_seconds'])}</p><h2>Incident decisions</h2><table><thead><tr><th>ID</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Acknowledged</th><th>Closed</th></tr></thead><tbody>{incident_rows}</tbody></table><h2>Saved evidence and bookmarks</h2>{bookmark_blocks}<h2>Investigation steps</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Action</th><th>Reference</th><th>Detail</th></tr></thead><tbody>{step_rows}</tbody></table></body></html>"""
+
+        csv_buffer = io.StringIO(); writer = csv.writer(csv_buffer)
+        writer.writerow(["Team","Incident ID","Title","Status","Owner","Classification","Closure notes","Acknowledged UTC","Closed UTC"])
+        for team in package["teams"].values():
+            for item in team["incidents"]:
+                writer.writerow([team["name"],item["id"],item["title"],item["status"],item["owner"],item.get("classification") or "",item.get("closure_notes") or "",item.get("acknowledged_at") or "",item.get("closed_at") or ""])
+
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("Team_Alpha_Report.html", team_html(package["teams"]["alpha"]))
+            archive.writestr("Team_Bravo_Report.html", team_html(package["teams"]["bravo"]))
+            archive.writestr("Incident_Decisions.csv", csv_buffer.getvalue().encode("utf-8-sig"))
+            archive.writestr("Raw_Exercise_Data.json", json.dumps(package, indent=2, ensure_ascii=False))
+        output.seek(0)
+        return send_file(output, mimetype="application/zip", as_attachment=True, download_name=f"Tabletop_Facilitator_Export_{utc_now():%Y%m%d_%H%M%S}Z.zip")
+
+    @app.get("/api/bookmarks")
+    @require_roles("alpha", "bravo")
+    def bookmarks():
+        team_id = session["role"]
+        with database(app) as db:
+            rows = db.execute("SELECT * FROM bookmarks WHERE team_id=? ORDER BY id DESC", (team_id,)).fetchall()
+            items = []
+            for row in rows:
+                item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
+                items.append(item)
+            return jsonify({"bookmarks": items})
+
+    @app.post("/api/bookmarks")
+    @require_roles("alpha", "bravo")
+    def create_bookmark():
+        team_id = session["role"]; body = request.get_json(silent=True) or {}
+        title = str(body.get("title") or "").strip()[:160]
+        notes = str(body.get("notes") or "").strip()[:4000]
+        query = str(body.get("query") or "").strip()[:12000]
+        incident_id = str(body.get("incident_id") or "").strip()[:40] or None
+        evidence = body.get("evidence") if isinstance(body.get("evidence"), dict) else {}
+        if not title or not notes or not query: return jsonify({"error": "Title, analyst notes, and a KQL query are required."}), 400
+        valid_incidents = {item["id"] for item in DAY_ALERTS} | {item["id"] for item in HISTORICAL_INCIDENTS}
+        if incident_id and incident_id not in valid_incidents: return jsonify({"error": "Choose a valid linked incident."}), 400
+        evidence_json = json.dumps(evidence, ensure_ascii=False)
+        if len(evidence_json) > 50000:
+            evidence = {"row_count": evidence.get("row_count", 0), "columns": evidence.get("columns", []), "rows": [], "preview_truncated": True}
+            evidence_json = json.dumps(evidence, ensure_ascii=False)
+        with database(app) as db:
+            elapsed = exercise_snapshot(db)["elapsed_seconds"]; now = iso_time()
+            cursor = db.execute("INSERT INTO bookmarks(team_id,title,notes,query,evidence_json,incident_id,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?,?,?)", (team_id,title,notes,query,evidence_json,incident_id,now,elapsed))
+            add_activity(db, team_id, incident_id or "", TEAMS[team_id], "Bookmark created", f"{title}. {notes}")
+            return jsonify({"id": cursor.lastrowid, "message": "Bookmark saved."}), 201
+
+    @app.delete("/api/bookmarks/<int:bookmark_id>")
+    @require_roles("alpha", "bravo")
+    def delete_bookmark(bookmark_id):
+        team_id = session["role"]
+        with database(app) as db:
+            row = db.execute("SELECT title,incident_id FROM bookmarks WHERE id=? AND team_id=?", (bookmark_id,team_id)).fetchone()
+            if not row: return jsonify({"error": "Bookmark not found."}), 404
+            db.execute("DELETE FROM bookmarks WHERE id=? AND team_id=?", (bookmark_id,team_id))
+            add_activity(db, team_id, row["incident_id"] or "", TEAMS[team_id], "Bookmark deleted", row["title"])
+            return jsonify({"message": "Bookmark deleted."})
 
     @app.get("/api/freshservice/records")
     @require_roles("alpha", "bravo", "facilitator")
@@ -377,6 +489,9 @@ def create_app(test_config=None):
     def freshservice_record(record_id):
         record = next((item for item in load_freshservice_records() if item["id"].lower() == record_id.lower()), None)
         if not record: return jsonify({"error": "FreshService record not found."}), 404
+        if session["role"] in TEAMS:
+            with database(app) as db:
+                add_activity(db, session["role"], record["id"], TEAMS[session["role"]], "FreshService record opened", record["subject"])
         return jsonify({"record": record})
 
     @app.post("/api/kql/query")
@@ -389,9 +504,15 @@ def create_app(test_config=None):
             with STATE_LOCK, database(app) as db:
                 sync_kusto_if_configured(app, db)
             result = call_kusto("/v1/rest/query", query); table = (result.get("Tables") or [{}])[0]; columns = [column.get("ColumnName", "") for column in table.get("Columns", [])]; rows = [dict(zip(columns, row)) for row in table.get("Rows", [])]
+            if session["role"] in TEAMS:
+                with database(app) as db:
+                    add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL query", f"Returned {len(rows)} records.\n{query}")
             return jsonify({"success": True, "columns": columns, "rows": rows, "row_count": len(rows), "database": KUSTO_DATABASE})
         except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace"); return jsonify({"success": False, "error": detail or str(exc)}), 400
+            detail = exc.read().decode("utf-8", errors="replace")
+            if session["role"] in TEAMS:
+                with database(app) as db: add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL query failed", query)
+            return jsonify({"success": False, "error": detail or str(exc)}), 400
         except (URLError, TimeoutError, OSError): return jsonify({"success": False, "error": "The Kusto emulator is unavailable."}), 503
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc: return jsonify({"success": False, "error": f"Unexpected Kusto response: {exc}"}), 502
 

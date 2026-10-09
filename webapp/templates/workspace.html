@@ -52,12 +52,12 @@
 
       <section id="view-logs" class="view">
         <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / General</div><h1>Logs</h1><p>Run KQL against the exercise workspace.</p></div><span class="tag">Connected to {{ kusto_database }}</span></div>
-        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
+        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
 | project Timestamp, DeviceName, ActionType, Details
 | order by Timestamp asc</textarea><div class="result-head"><strong>Results</strong><span id="query-meta">Ready</span></div><div id="query-results" class="query-results"><div class="empty">Run the query to view results.</div></div></div></div>
       </section>
 
-      <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>Evidence saved during this investigation.</p></div></div><div class="content"><div class="empty-card">No bookmarks have been saved yet.</div></div></section>
+      <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>KQL evidence saved by {{ workspace_label }} during this investigation.</p></div><button id="bookmark-refresh" class="secondary">↻ Refresh</button></div><div class="content"><div id="bookmark-list" class="bookmark-list"><div class="empty-card">No bookmarks have been saved yet.</div></div></div></section>
       <section id="view-freshservice" class="view">
         <div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets, service requests and approved changes.</p></div><span class="tag">Read-only evidence</span></div>
         <div class="fs-toolbar"><input id="fs-search" type="search" placeholder="Search ID, subject, user, agent or asset"><select id="fs-type"><option value="all">All record types</option><option>Incident</option><option>Service request</option><option>Change</option></select><select id="fs-status"><option value="all">All statuses</option><option>Resolved</option><option>Closed</option><option>Implemented</option><option>Pending approval</option></select><button id="fs-refresh" class="secondary">↻ Refresh</button></div>
@@ -68,7 +68,7 @@
       </section>
 
       <section id="view-facilitator" class="view{{ ' active' if is_facilitator else '' }}">
-        <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><span class="facilitator-badge">FACILITATOR ONLY</span></div>
+        <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><div class="page-actions"><button id="export-exercise" class="secondary">⇩ Export grading pack</button><span class="facilitator-badge">FACILITATOR ONLY</span></div></div>
         <div class="facilitator-content">
           <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
           <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div><div><strong id="fac-next">—</strong><span>Next alert</span></div></div>
@@ -78,6 +78,18 @@
       </section>
     </main>
   </div>
+</div>
+
+<div id="bookmark-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="bookmark-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="bookmark-title-heading">
+    <div class="modal-head"><h2 id="bookmark-title-heading">Add evidence bookmark</h2><button type="button" id="cancel-bookmark" class="icon-button">×</button></div>
+    <label>Title<input id="bookmark-title" maxlength="160" required placeholder="What does this evidence show?"></label>
+    <label>Linked incident<select id="bookmark-incident"><option value="">No linked incident</option></select></label>
+    <label>Analyst notes<textarea id="bookmark-notes" rows="5" maxlength="4000" required placeholder="Explain why this evidence matters and what conclusion it supports."></textarea></label>
+    <label>KQL query<textarea id="bookmark-query" rows="5" readonly></textarea></label>
+    <div id="bookmark-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-bookmark-2" class="secondary">Cancel</button><button type="submit" class="primary">Save bookmark</button></div>
+  </form>
 </div>
 
 <div id="modal-backdrop" class="modal-backdrop" aria-hidden="true">
