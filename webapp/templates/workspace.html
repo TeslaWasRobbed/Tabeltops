@@ -55,7 +55,7 @@
 
       <section id="view-logs" class="view">
         <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / General</div><h1>Logs</h1><p>Run KQL against the exercise workspace.</p></div><span class="tag">Connected to {{ kusto_database }}</span></div>
-        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><button id="export-query" class="secondary" disabled>⇩ Export selected (0)</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
+        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><button id="export-query" class="secondary" disabled>⇩ Export selected (0)</button><span>Shift+click selects a row range · Shift+Enter runs the query</span></div><textarea id="query-editor" spellcheck="false">TestEvents
 | project Timestamp, DeviceName, ActionType, Details
 | order by Timestamp asc</textarea><div class="result-head"><strong>Results</strong><span id="query-meta">Ready</span></div><div id="query-results" class="query-results"><div class="empty">Run the query to view results.</div></div></div></div>
       </section>

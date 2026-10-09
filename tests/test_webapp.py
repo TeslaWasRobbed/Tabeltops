@@ -26,6 +26,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b'id="connection-banner"', response.data)
         self.assertIn(b'id="reset-confirmation"', response.data)
         self.assertIn(b'id="export-query"', response.data)
+        self.assertIn(b"Shift+click selects a row range", response.data)
         self.assertIn(b'id="simulation-badge"', response.data)
         self.assertIn(b"Created / closed", response.data)
         self.assertNotIn(b"Next alert", response.data)
