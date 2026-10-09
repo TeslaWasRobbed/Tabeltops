@@ -1,5 +1,6 @@
 import unittest
 import io
+import json
 import sqlite3
 import zipfile
 from pathlib import Path
@@ -240,6 +241,37 @@ class ExerciseWorkflowTests(unittest.TestCase):
 
         self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
         self.assertEqual(self.client.get("/api/bookmarks").get_json()["bookmarks"], [])
+        self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["activity"], [])
+
+    def test_journal_is_team_isolated_exported_and_cleared_by_reset(self):
+        self.fast_forward(5 * 60)
+        invalid = self.client.post("/api/journal", json={"category": "Answer", "content": "Unsupported category"})
+        self.assertEqual(invalid.status_code, 400)
+
+        created = self.client.post("/api/journal", json={
+            "category": "Hypothesis",
+            "content": "The MFA change may be connected to an approved support request.",
+            "incident_id": "INC-2001",
+        })
+        self.assertEqual(created.status_code, 201)
+        entries = self.client.get("/api/journal").get_json()["entries"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["category"], "Hypothesis")
+        self.assertEqual(self.bravo.get("/api/journal").get_json()["entries"], [])
+
+        exported = self.facilitator.get("/api/facilitator/export")
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            alpha_report = archive.read("Team_Alpha_Report.html").decode("utf-8")
+            bravo_report = archive.read("Team_Bravo_Report.html").decode("utf-8")
+            raw = json.loads(archive.read("Raw_Exercise_Data.json"))
+            self.assertIn("Investigation journal", alpha_report)
+            self.assertIn("The MFA change may be connected", alpha_report)
+            self.assertNotIn("The MFA change may be connected", bravo_report)
+            self.assertEqual(len(raw["teams"]["alpha"]["journal"]), 1)
+            self.assertEqual(raw["teams"]["bravo"]["journal"], [])
+
+        self.facilitator.post("/api/facilitator/exercise/reset", json={"confirmation": "RESET"})
+        self.assertEqual(self.client.get("/api/journal").get_json()["entries"], [])
         self.assertEqual(self.facilitator.get("/api/facilitator/review").get_json()["activity"], [])
 
     @patch("webapp.app.call_kusto")

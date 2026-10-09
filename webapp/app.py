@@ -43,6 +43,14 @@ CLASSIFICATIONS = [
     "Undetermined",
 ]
 
+JOURNAL_CATEGORIES = [
+    "Hypothesis",
+    "Confirmed fact",
+    "Outstanding question",
+    "Containment recommendation",
+    "General note",
+]
+
 
 def alert(alert_id, minute, title, severity, tactics, description, entities):
     return {"id": alert_id, "release_offset": minute * 60, "title": title, "severity": severity, "tactics": tactics, "description": description, "entities": entities, "historical": False}
@@ -191,6 +199,10 @@ def init_db(app):
             title TEXT NOT NULL, notes TEXT NOT NULL, query TEXT NOT NULL,
             evidence_json TEXT NOT NULL, incident_id TEXT,
             created_at TEXT NOT NULL, elapsed_seconds INTEGER NOT NULL DEFAULT 0)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS journal_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT NOT NULL,
+            category TEXT NOT NULL, content TEXT NOT NULL, incident_id TEXT,
+            created_at TEXT NOT NULL, elapsed_seconds INTEGER NOT NULL DEFAULT 0)""")
         db.execute("INSERT OR IGNORE INTO exercise_state(singleton,status,updated_at,accumulated_seconds) VALUES(1,'not_started',?,0)", (iso_time(),))
 
 
@@ -275,7 +287,7 @@ def create_app(test_config=None):
         if session.get("role") != role: return render_template("access.html", role=role, error=None)
         return render_template(
             "workspace.html", kusto_database=KUSTO_DATABASE,
-            classifications=CLASSIFICATIONS, role=role,
+            classifications=CLASSIFICATIONS, journal_categories=JOURNAL_CATEGORIES, role=role,
             team_id=role if role in TEAMS else None,
             workspace_label=TEAMS.get(role, "Facilitator"),
             is_facilitator=role == "facilitator",
@@ -331,7 +343,7 @@ def create_app(test_config=None):
                 if str((request.get_json(silent=True) or {}).get("confirmation", "")) != "RESET": return jsonify({"error": "Type RESET to confirm."}), 400
                 if app.config.get("INGESTION_MANIFEST"):
                     reset_dataset(db, app.config["INGESTION_MANIFEST"], app.config["KUSTO_CONTAINER_DATA_ROOT"])
-                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state"); db.execute("DELETE FROM bookmarks")
+                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state"); db.execute("DELETE FROM bookmarks"); db.execute("DELETE FROM journal_entries")
                 db.execute("UPDATE exercise_state SET status='not_started',started_at=NULL,updated_at=?,accumulated_seconds=0 WHERE singleton=1", (iso_time(now),))
             return jsonify(exercise_snapshot(db))
 
@@ -396,8 +408,9 @@ def create_app(test_config=None):
                 for row in bookmark_rows:
                     item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
                     team_bookmarks.append(item)
+                journal = [dict(row) for row in db.execute("SELECT * FROM journal_entries WHERE team_id=? ORDER BY id", (team_id,))]
                 steps = [dict(row) for row in db.execute("SELECT incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity WHERE team_id=? ORDER BY id", (team_id,))]
-                package["teams"][team_id] = {"name": team_name, "incidents": day_incidents, "bookmarks": team_bookmarks, "steps": steps}
+                package["teams"][team_id] = {"name": team_name, "incidents": day_incidents, "bookmarks": team_bookmarks, "journal": journal, "steps": steps}
 
         def elapsed_label(seconds):
             seconds = max(0, int(seconds or 0)); return f"T+{seconds//3600:02}:{seconds%3600//60:02}:{seconds%60:02}"
@@ -411,11 +424,15 @@ def create_app(test_config=None):
                 f"<section><h3>{html_escape(item['title'])}</h3><p><b>{elapsed_label(item['elapsed_seconds'])}</b> · Linked incident: {html_escape(item.get('incident_id') or 'None')}</p><p>{html_escape(item['notes'])}</p><h4>KQL</h4><pre>{html_escape(item['query'])}</pre><h4>Saved evidence preview</h4><pre>{html_escape(json.dumps(item['evidence'], indent=2, ensure_ascii=False))}</pre></section>"
                 for item in team["bookmarks"]
             ) or "<p>No bookmarks were saved.</p>"
+            journal_rows = "".join(
+                f"<tr><td>{elapsed_label(item['elapsed_seconds'])}</td><td>{html_escape(item['created_at'])}</td><td>{html_escape(item['category'])}</td><td>{html_escape(item.get('incident_id') or 'None')}</td><td>{html_escape(item['content'])}</td></tr>"
+                for item in team["journal"]
+            ) or '<tr><td colspan="5">No investigation journal entries were recorded.</td></tr>'
             step_rows = "".join(
                 f"<tr><td>{elapsed_label(item['elapsed_seconds'])}</td><td>{html_escape(item['created_at'])}</td><td>{html_escape(item['action'])}</td><td>{html_escape(item.get('incident_id') or '—')}</td><td><pre>{html_escape(item['detail'])}</pre></td></tr>"
                 for item in team["steps"]
             ) or '<tr><td colspan="5">No analyst activity was recorded.</td></tr>'
-            return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html_escape(team['name'])} exercise report</title><style>body{{font:14px Arial,sans-serif;color:#17202a;margin:32px}}h1{{margin-bottom:4px}}.meta{{color:#586674}}table{{width:100%;border-collapse:collapse;margin:14px 0 28px}}th,td{{padding:8px;border:1px solid #ccd3da;text-align:left;vertical-align:top}}th{{background:#edf2f6}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;margin:4px 0}}section{{padding:12px;margin:12px 0;border:1px solid #ccd3da}}@media print{{body{{margin:12mm}}}}</style></head><body><h1>{html_escape(team['name'])} — Tabletop investigation report</h1><p class="meta">Generated {html_escape(package['generated_at'])} · Exercise state {html_escape(snapshot['status'])} · {elapsed_label(snapshot['elapsed_seconds'])}</p><h2>Incident decisions</h2><table><thead><tr><th>ID</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Acknowledged</th><th>Closed</th></tr></thead><tbody>{incident_rows}</tbody></table><h2>Saved evidence and bookmarks</h2>{bookmark_blocks}<h2>Investigation steps</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Action</th><th>Reference</th><th>Detail</th></tr></thead><tbody>{step_rows}</tbody></table></body></html>"""
+            return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html_escape(team['name'])} exercise report</title><style>body{{font:14px Arial,sans-serif;color:#17202a;margin:32px}}h1{{margin-bottom:4px}}.meta{{color:#586674}}table{{width:100%;border-collapse:collapse;margin:14px 0 28px}}th,td{{padding:8px;border:1px solid #ccd3da;text-align:left;vertical-align:top}}th{{background:#edf2f6}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;margin:4px 0}}section{{padding:12px;margin:12px 0;border:1px solid #ccd3da}}@media print{{body{{margin:12mm}}}}</style></head><body><h1>{html_escape(team['name'])} — Tabletop investigation report</h1><p class="meta">Generated {html_escape(package['generated_at'])} · Exercise state {html_escape(snapshot['status'])} · {elapsed_label(snapshot['elapsed_seconds'])}</p><h2>Incident decisions</h2><table><thead><tr><th>ID</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Acknowledged</th><th>Closed</th></tr></thead><tbody>{incident_rows}</tbody></table><h2>Investigation journal</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Category</th><th>Linked incident</th><th>Entry</th></tr></thead><tbody>{journal_rows}</tbody></table><h2>Saved evidence and bookmarks</h2>{bookmark_blocks}<h2>Investigation steps</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Action</th><th>Reference</th><th>Detail</th></tr></thead><tbody>{step_rows}</tbody></table></body></html>"""
 
         csv_buffer = io.StringIO(); writer = csv.writer(csv_buffer)
         writer.writerow(["Team","Incident ID","Title","Status","Owner","Classification","Closure notes","Acknowledged UTC","Closed UTC"])
@@ -431,6 +448,42 @@ def create_app(test_config=None):
             archive.writestr("Raw_Exercise_Data.json", json.dumps(package, indent=2, ensure_ascii=False))
         output.seek(0)
         return send_file(output, mimetype="application/zip", as_attachment=True, download_name=f"Tabletop_Facilitator_Export_{utc_now():%Y%m%d_%H%M%S}Z.zip")
+
+    @app.get("/api/journal")
+    @require_roles("alpha", "bravo")
+    def journal_entries():
+        team_id = session["role"]
+        with database(app) as db:
+            rows = db.execute("SELECT * FROM journal_entries WHERE team_id=? ORDER BY id DESC", (team_id,)).fetchall()
+            return jsonify({"entries": [dict(row) for row in rows], "categories": JOURNAL_CATEGORIES})
+
+    @app.post("/api/journal")
+    @require_roles("alpha", "bravo")
+    def create_journal_entry():
+        team_id = session["role"]; body = request.get_json(silent=True) or {}
+        category = str(body.get("category") or "").strip()
+        content = str(body.get("content") or "").strip()[:4000]
+        incident_id = str(body.get("incident_id") or "").strip()[:40] or None
+        if category not in JOURNAL_CATEGORIES: return jsonify({"error": "Choose a valid journal category."}), 400
+        if not content: return jsonify({"error": "Enter an investigation journal note."}), 400
+        valid_incidents = {item["id"] for item in DAY_ALERTS} | {item["id"] for item in HISTORICAL_INCIDENTS}
+        if incident_id and incident_id not in valid_incidents: return jsonify({"error": "Choose a valid linked incident."}), 400
+        with database(app) as db:
+            elapsed = exercise_snapshot(db)["elapsed_seconds"]; now = iso_time()
+            cursor = db.execute("INSERT INTO journal_entries(team_id,category,content,incident_id,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?)", (team_id,category,content,incident_id,now,elapsed))
+            add_activity(db, team_id, incident_id or "", TEAMS[team_id], "Journal entry created", f"{category}: {content}")
+            return jsonify({"id": cursor.lastrowid, "message": "Journal entry saved."}), 201
+
+    @app.delete("/api/journal/<int:entry_id>")
+    @require_roles("alpha", "bravo")
+    def delete_journal_entry(entry_id):
+        team_id = session["role"]
+        with database(app) as db:
+            row = db.execute("SELECT category,content,incident_id FROM journal_entries WHERE id=? AND team_id=?", (entry_id,team_id)).fetchone()
+            if not row: return jsonify({"error": "Journal entry not found."}), 404
+            db.execute("DELETE FROM journal_entries WHERE id=? AND team_id=?", (entry_id,team_id))
+            add_activity(db, team_id, row["incident_id"] or "", TEAMS[team_id], "Journal entry deleted", f"{row['category']}: {row['content']}")
+            return jsonify({"message": "Journal entry deleted."})
 
     @app.get("/api/bookmarks")
     @require_roles("alpha", "bravo")

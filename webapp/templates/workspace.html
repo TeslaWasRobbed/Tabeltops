@@ -21,6 +21,7 @@
         <button class="nav active" data-view="incidents"><span>⚠</span>Incidents <b id="nav-open-count">0</b></button>
         <button class="nav" data-view="logs"><span>⌁</span>Logs</button>
         <button class="nav" data-view="bookmarks"><span>☆</span>Bookmarks</button>
+        <button class="nav" data-view="journal"><span>≡</span>Journal</button>
         <button class="nav" data-view="freshservice"><span>▣</span>FreshService</button>
         {% else %}
         <button class="nav facilitator-link active" data-view="facilitator"><span>⚙</span>Facilitator</button>
@@ -58,6 +59,7 @@
       </section>
 
       <section id="view-bookmarks" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Threat management</div><h1>Bookmarks</h1><p>KQL evidence saved by {{ workspace_label }} during this investigation.</p></div><button id="bookmark-refresh" class="secondary">↻ Refresh</button></div><div class="content"><div id="bookmark-list" class="bookmark-list"><div class="empty-card">No bookmarks have been saved yet.</div></div></div></section>
+      <section id="view-journal" class="view"><div class="pagehead"><div><div class="crumb">Microsoft Sentinel / Case management</div><h1>Investigation journal</h1><p>Private working notes for {{ workspace_label }}. Entries are included in the facilitator report.</p></div><div class="page-actions"><button id="journal-refresh" class="secondary">↻ Refresh</button><button id="add-journal" class="primary">+ Add entry</button></div></div><div class="content"><div id="journal-list" class="journal-list"><div class="empty-card">No investigation journal entries have been recorded.</div></div></div></section>
       <section id="view-freshservice" class="view">
         <div class="pagehead"><div><div class="crumb">Service management</div><h1>FreshService</h1><p>Search historical tickets, service requests and approved changes.</p></div><span class="tag">Read-only evidence</span></div>
         <div class="fs-toolbar"><input id="fs-search" type="search" placeholder="Search ID, subject, user, agent or asset"><select id="fs-type"><option value="all">All record types</option><option>Incident</option><option>Service request</option><option>Change</option></select><select id="fs-status"><option value="all">All statuses</option><option>Resolved</option><option>Closed</option><option>Implemented</option><option>Pending approval</option></select><button id="fs-refresh" class="secondary">↻ Refresh</button></div>
@@ -78,6 +80,17 @@
       </section>
     </main>
   </div>
+</div>
+
+<div id="journal-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="journal-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="journal-heading">
+    <div class="modal-head"><h2 id="journal-heading">Add investigation journal entry</h2><button type="button" id="cancel-journal" class="icon-button">×</button></div>
+    <label>Category<select id="journal-category" required><option value="">Select a category</option>{% for item in journal_categories %}<option>{{ item }}</option>{% endfor %}</select></label>
+    <label>Linked incident<select id="journal-incident"><option value="">No linked incident</option></select></label>
+    <label>Investigation note<textarea id="journal-content" rows="7" maxlength="4000" required placeholder="Record the evidence, reasoning, decision or follow-up required."></textarea></label>
+    <div id="journal-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-journal-2" class="secondary">Cancel</button><button type="submit" class="primary">Save entry</button></div>
+  </form>
 </div>
 
 <div id="bookmark-modal" class="modal-backdrop" aria-hidden="true">
