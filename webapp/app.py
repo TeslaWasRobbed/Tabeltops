@@ -201,8 +201,7 @@ def exercise_snapshot(db):
         elapsed += max(0, (utc_now() - parse_time(row["started_at"])).total_seconds())
     elapsed = min(elapsed, EXERCISE_DURATION_SECONDS)
     status = "completed" if elapsed >= EXERCISE_DURATION_SECONDS else row["status"]
-    next_alert = next((a for a in DAY_ALERTS if a["release_offset"] > elapsed), None)
-    return {"status": status, "elapsed_seconds": int(elapsed), "duration_seconds": EXERCISE_DURATION_SECONDS, "started_at": row["started_at"], "next_alert_in_seconds": max(0, int(next_alert["release_offset"] - elapsed)) if next_alert and status == "running" else None, "released_alerts": sum(a["release_offset"] <= elapsed for a in DAY_ALERTS), "total_alerts": len(DAY_ALERTS)}
+    return {"status": status, "elapsed_seconds": int(elapsed), "duration_seconds": EXERCISE_DURATION_SECONDS, "started_at": row["started_at"], "released_alerts": sum(a["release_offset"] <= elapsed for a in DAY_ALERTS), "total_alerts": len(DAY_ALERTS)}
 
 
 def materialize_incident(definition, state=None):

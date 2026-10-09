@@ -20,6 +20,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"Connected to TabletopSIEM", response.data)
         self.assertIn(b"/api/kql/query", response.data)
         self.assertIn(b"TestEvents", response.data)
+        self.assertNotIn(b"Next alert", response.data)
+        self.assertNotIn(b'id="next-alert"', response.data)
 
     def test_access_codes_protect_workspaces_and_apis(self):
         anonymous = app.test_client()
@@ -123,6 +125,7 @@ class ExerciseWorkflowTests(unittest.TestCase):
         payload = self.client.get("/api/incidents").get_json()
 
         self.assertEqual(payload["exercise"]["status"], "not_started")
+        self.assertNotIn("next_alert_in_seconds", payload["exercise"])
         self.assertEqual(len(payload["incidents"]), len(HISTORICAL_INCIDENTS))
         self.assertGreaterEqual(len(payload["incidents"]), 30)
         self.assertTrue(all(item["historical"] for item in payload["incidents"]))

@@ -10,7 +10,7 @@
 <div class="app">
   <header class="topbar">
     <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span class="simulation">TRAINING SIMULATION</span></div>
-    <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong><span id="next-alert"></span></div>
+    <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong></div>
     <div class="team">{{ workspace_label }} <span class="avatar">{{ 'FC' if is_facilitator else ('TA' if team_id == 'alpha' else 'TB') }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
   </header>
   <div class="shell">
@@ -71,7 +71,7 @@
         <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><div class="page-actions"><button id="export-exercise" class="secondary">⇩ Export grading pack</button><span class="facilitator-badge">FACILITATOR ONLY</span></div></div>
         <div class="facilitator-content">
           <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
-          <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div><div><strong id="fac-next">—</strong><span>Next alert</span></div></div>
+          <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div></div>
           <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved independently for Team Alpha and Team Bravo. No correctness or score is shown to participants.</p><div class="table-scroll fac-table"><table><thead><tr><th>Team</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
           <div class="card"><h2>Activity audit trail</h2><div id="fac-activity"></div></div>
         </div>
