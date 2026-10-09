@@ -25,6 +25,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"Related FreshService records", response.data)
         self.assertIn(b'id="connection-banner"', response.data)
         self.assertIn(b'id="reset-confirmation"', response.data)
+        self.assertIn(b'id="export-query"', response.data)
+        self.assertIn(b'id="simulation-badge"', response.data)
+        self.assertIn(b"Created / closed", response.data)
         self.assertNotIn(b"Next alert", response.data)
         self.assertNotIn(b'id="next-alert"', response.data)
 
@@ -85,15 +88,35 @@ class WebAppTests(unittest.TestCase):
         response = self.client.get("/api/freshservice/records")
         payload = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(payload["records"]), 14)
+        self.assertEqual(len(payload["records"]), 15)
         self.assertIn("INC-48217", {item["id"] for item in payload["records"]})
         self.assertIn("CHG-76822", {item["id"] for item in payload["records"]})
+        self.assertIn("SR-49777", {item["id"] for item in payload["records"]})
 
         detail = self.client.get("/api/freshservice/records/INC-48217").get_json()["record"]
         self.assertEqual(detail["assigned_to"], "Anita Job")
         self.assertEqual(detail["related_records"], ["SR-48226", "Sentinel INC-1841"])
         self.assertTrue(any(entry["kind"] == "Resolution" for entry in detail["timeline"]))
         self.assertEqual(self.client.patch("/api/freshservice/records/INC-48217", json={}).status_code, 405)
+
+    @patch("webapp.app.call_kusto")
+    def test_query_export_is_limited_labelled_and_formula_safe(self, call_kusto):
+        call_kusto.return_value = {
+            "Tables": [{
+                "Columns": [{"ColumnName": "TimeGenerated"}, {"ColumnName": "Value"}],
+                "Rows": [["2026-09-03T09:08:00Z", "=SUM(1,1)"]] * 260,
+            }]
+        }
+        response = self.client.post("/api/kql/export", json={"query": "DeviceNetworkEvents | take 260"})
+        content = response.data.decode("utf-8-sig")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "text/csv")
+        self.assertEqual(response.headers["X-Tabletop-Training-Data"], "true")
+        self.assertIn("TabletopSIEM TRAINING DATA EXPORT", content)
+        self.assertIn("Rows returned,260", content)
+        self.assertIn("Rows exported,250", content)
+        self.assertIn("'=SUM(1,1)", content)
 
 class ExerciseWorkflowTests(unittest.TestCase):
     def setUp(self):

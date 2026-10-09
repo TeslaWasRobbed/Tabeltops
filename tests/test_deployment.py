@@ -7,6 +7,7 @@ from pathlib import Path
 from deployment.backup_state import create_backup, sqlite_integrity
 from deployment.health_check import check_health
 from deployment.restore_state import restore_state
+from deployment.smoke_test import load_env_file
 
 
 class FakeResponse:
@@ -69,6 +70,18 @@ class BackupTests(unittest.TestCase):
         restored.close()
         self.assertIsNotNone(rollback)
         self.assertEqual(sqlite_integrity(rollback), "ok")
+
+
+class SmokeTestTests(unittest.TestCase):
+    def test_environment_file_parser_ignores_comments_and_quotes_values(self):
+        path = Path(__file__).parent / "smoke.env"
+        path.write_text("# comment\nTABLETOP_ALPHA_CODE='alpha secret'\nTABLETOP_BRAVO_CODE=bravo-secret\n", encoding="utf-8")
+        try:
+            values = load_env_file(path)
+            self.assertEqual(values["TABLETOP_ALPHA_CODE"], "alpha secret")
+            self.assertEqual(values["TABLETOP_BRAVO_CODE"], "bravo-secret")
+        finally:
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

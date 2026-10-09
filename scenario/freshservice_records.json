@@ -320,5 +320,28 @@
       {"time": "2026-11-05T08:30:00Z", "author": "Hannah Rees", "kind": "Approval", "text": "Temporary eDiscovery Reviewer access approved for Alex Williams."},
       {"time": "2026-11-11T16:31:00Z", "author": "Alex Williams", "kind": "Resolution", "text": "Evidence collection complete and access removal requested."}
     ]
+  },
+  {
+    "id": "SR-49777",
+    "type": "Service request",
+    "subject": "Request for a hot chocolate machine in the Security Operations kitchen",
+    "requester": "Hannah Rees",
+    "affected_user": "Security Operations",
+    "status": "Closed",
+    "priority": "Low",
+    "assigned_to": "Beth Edgar",
+    "group": "Procurement",
+    "created_at": "2026-10-21T14:12:00Z",
+    "updated_at": "2026-10-23T09:41:00Z",
+    "resolved_at": "2026-10-23T09:41:00Z",
+    "description": "Security Operations requested a dedicated hot chocolate machine after noting that the existing kitchen equipment only provides coffee and tea. Procurement reviewed the request against the workplace refresh budget.",
+    "assets": ["Security Operations kitchen"],
+    "related_records": ["FACILITIES-2027-REFRESH"],
+    "attachments": [{"name": "hot-chocolate-machine-options.pdf", "size": "842 KB", "type": "application/pdf"}],
+    "timeline": [
+      {"time": "2026-10-21T14:12:00Z", "author": "Hannah Rees", "kind": "Request", "text": "Current kitchen provision does not include hot chocolate. This has been noted as a material operational concern by the team."},
+      {"time": "2026-10-22T11:06:00Z", "author": "Beth Edgar", "kind": "Private note", "text": "Three countertop options reviewed. No model supports redundant marshmallow delivery."},
+      {"time": "2026-10-23T09:41:00Z", "author": "Beth Edgar", "kind": "Resolution", "text": "Request deferred to the 2027 workplace refresh. Emergency hot chocolate sachets approved as an interim control."}
+    ]
   }
 ]

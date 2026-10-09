@@ -42,6 +42,11 @@ timestamps. The facilitator can download a ZIP grading pack containing a
 printable HTML report for each team, a combined incident-decisions CSV, and the
 raw exercise audit data as JSON.
 
+After a successful KQL query, analysts can export up to 250 result rows as CSV.
+The export carries a visible training-data notice, UTC generation time, database,
+query hash, returned/exported counts, and spreadsheet-formula protection. The
+export action is retained in the team's facilitator-visible activity trail.
+
 ## Exercise controls
 
 Sign into the protected **Facilitator** workspace to start, pause, resume, or
@@ -78,6 +83,12 @@ batches. Once the facilitator starts the exercise, requests from the application
 ingest each due day-of batch. The SQLite ingestion ledger makes this idempotent
 across page refreshes and application restarts.
 
+When generated scenario telemetry changes, rebuilding the files alone is not
+enough. After restarting the application, use the facilitator's typed **RESET**
+control once to clear the Kusto tables and reload the revised historical
+baseline. Do this only before participants begin and after preserving any state
+that must be retained.
+
 ## Production service on the VM
 
 Install the locked application dependencies into the virtual environment:
@@ -102,6 +113,12 @@ Run the end-to-end health check at any time:
 
 ```bash
 .venv/bin/python deployment/health_check.py
+```
+
+Run the non-destructive authenticated smoke test against all three workspaces:
+
+```bash
+sudo .venv/bin/python deployment/smoke_test.py --env-file /etc/tabletop-siem.env
 ```
 
 It exits non-zero unless Flask, the scenario package, and the Kusto emulator are

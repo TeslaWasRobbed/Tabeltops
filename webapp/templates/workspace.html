@@ -9,7 +9,7 @@
 <body data-query-url="/api/kql/query" data-role="{{ role }}" data-team="{{ team_id or '' }}">
 <div class="app">
   <header class="topbar">
-    <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span class="simulation">TRAINING SIMULATION</span></div>
+    <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span id="simulation-badge" class="simulation">TRAINING SIMULATION</span></div>
     <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong></div>
     <div class="team">{{ workspace_label }} <span class="avatar">{{ 'FC' if is_facilitator else ('TA' if team_id == 'alpha' else 'TB') }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
   </header>
@@ -37,7 +37,7 @@
         <div class="metrics"><div><strong id="metric-open">0</strong><span>Open incidents</span></div><div><strong id="metric-new">0</strong><span>New</span></div><div><strong id="metric-high">0</strong><span>High severity</span></div><div><strong id="metric-closed">0</strong><span>Closed</span></div></div>
         <div class="toolbar"><input id="incident-search" type="search" placeholder="Search incidents"><select id="severity-filter"><option value="all">All severities</option><option>High</option><option>Medium</option><option>Low</option></select><select id="status-filter"><option value="open" selected>New and Active</option><option>New</option><option>Active</option><option>Closed</option><option value="all">All statuses</option></select><label><input id="historical-filter" type="checkbox"> Historical only</label></div>
         <div class="incident-layout">
-          <div class="table-scroll"><table><thead><tr><th>Severity</th><th>Incident</th><th>Status</th><th>Created</th><th>Owner</th></tr></thead><tbody id="incident-rows"></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>Severity</th><th>Incident</th><th>Status</th><th>Created / closed</th><th>Owner</th></tr></thead><tbody id="incident-rows"></tbody></table></div>
           <aside id="preview" class="preview"><div class="empty">Select an incident to view details.</div></aside>
         </div>
       </section>
@@ -55,7 +55,7 @@
 
       <section id="view-logs" class="view">
         <div class="pagehead"><div><div class="crumb">Microsoft Sentinel / General</div><h1>Logs</h1><p>Run KQL against the exercise workspace.</p></div><span class="tag">Connected to {{ kusto_database }}</span></div>
-        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
+        <div class="logs-layout"><aside class="schema"><h2>Tables</h2><input id="schema-search" placeholder="Search tables"><div id="schema-list"></div></aside><div class="query-area"><div class="query-toolbar"><button id="run-query" class="primary">▶ Run</button><button id="save-bookmark" class="secondary" disabled>☆ Add bookmark</button><button id="export-query" class="secondary" disabled>⇩ Export results</button><span>Shift+Enter to run</span></div><textarea id="query-editor" spellcheck="false">TestEvents
 | project Timestamp, DeviceName, ActionType, Details
 | order by Timestamp asc</textarea><div class="result-head"><strong>Results</strong><span id="query-meta">Ready</span></div><div id="query-results" class="query-results"><div class="empty">Run the query to view results.</div></div></div></div>
       </section>
@@ -93,6 +93,14 @@
     <div id="reset-error" class="form-error"></div>
     <div class="modal-actions"><button type="button" id="cancel-reset-2" class="secondary">Cancel</button><button type="submit" class="danger">Reset exercise</button></div>
   </form>
+</div>
+
+<div id="about-modal" class="modal-backdrop" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="about-heading">
+    <div class="modal-head"><h2 id="about-heading">About this simulation</h2><button type="button" id="close-about" class="icon-button">×</button></div>
+    <div class="about-content"><p><strong>TabletopSIEM</strong> — Sentinel-shaped, entirely fictional and powered by suspicious quantities of hot chocolate.</p><dl class="props"><dt>Workspace</dt><dd>TabletopSIEM</dd><dt>Threat actors</dt><dd>Several</dd><dt>Packets</dt><dd>Adequately packet-shaped</dd><dt>Production tenants harmed</dt><dd>None</dd></dl></div>
+    <div class="modal-actions"><button type="button" id="close-about-2" class="secondary">Close</button></div>
+  </div>
 </div>
 
 <div id="fac-observation-modal" class="modal-backdrop" aria-hidden="true">

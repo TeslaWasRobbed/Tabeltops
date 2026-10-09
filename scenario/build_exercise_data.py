@@ -113,11 +113,13 @@ def build_rows(schemas):
             add(rows,historical,"IdentityInfo",record(schemas,"IdentityInfo",TimeGenerated=stamp(DAY-timedelta(days=1)),AccountName=upn.split("@")[0],AccountDomain=upn.split("@")[-1],AccountUPN=upn,AccountDisplayName=user["DisplayName"],Department=user["Department"],JobTitle=user["JobTitle"],AssignedRoles=json.dumps(roles),GroupMembership=json.dumps([user["Department"]]),IsAccountEnabled="true",UserType=user["UserType"],RiskLevel="none",IsMFARegistered="true"))
         if user["UserType"] != "Member":
             continue
-        device=f"CS-{user['UserId']}-W11"
-        add(rows,historical,"DeviceInfo",record(schemas,"DeviceInfo",TimeGenerated=stamp(DAY-timedelta(days=1)),Timestamp=stamp(DAY-timedelta(days=1)),DeviceId=f"dev-{user['UserId'].lower()}",DeviceName=device,OSPlatform="Windows11",OnboardingStatus="Onboarded",SensorHealthState="Active",IsAzureADJoined="true",MachineGroup="Corporate Workstations"))
+        device=DEVICE if upn == LOUISE else f"CS-{user['UserId']}-W11"
+        device_id="dev-ll-042" if upn == LOUISE else f"dev-{user['UserId'].lower()}"
+        if upn != LOUISE:
+            add(rows,historical,"DeviceInfo",record(schemas,"DeviceInfo",TimeGenerated=stamp(DAY-timedelta(days=1)),Timestamp=stamp(DAY-timedelta(days=1)),DeviceId=device_id,DeviceName=device,OSPlatform="Windows11",OnboardingStatus="Onboarded",SensorHealthState="Active",IsAzureADJoined="true",MachineGroup="Corporate Workstations"))
         for event_number in range(24):
             days_ago=2+((index*7+event_number*11)%87); minute=(index*13+event_number*37)%540+480; when=DAY-timedelta(days=days_ago)+timedelta(minutes=minute)
-            add(rows,historical,"SigninLogs",record(schemas,"SigninLogs",TimeGenerated=stamp(when),UserPrincipalName=upn,UserDisplayName=user["DisplayName"],AppDisplayName=("Microsoft Teams","Office 365 Exchange Online","Microsoft SharePoint Online")[event_number%3],IPAddress=f"10.{20+index%20}.{event_number%250}.{10+index%200}",ResultType="0",ResultDescription="Success",ClientAppUsed="Browser",DeviceDetail=json.dumps({"deviceId":f"dev-{user['UserId'].lower()}","displayName":device,"isManaged":True}),Location="GB",LocationDetails=json.dumps({"city":("London","Cardiff","Bristol","Manchester")[index%4],"countryOrRegion":"GB"}),RiskLevelDuringSignIn="none"))
+            add(rows,historical,"SigninLogs",record(schemas,"SigninLogs",TimeGenerated=stamp(when),UserPrincipalName=upn,UserDisplayName=user["DisplayName"],AppDisplayName=("Microsoft Teams","Office 365 Exchange Online","Microsoft SharePoint Online")[event_number%3],IPAddress=f"10.{20+index%20}.{event_number%250}.{10+index%200}",ResultType="0",ResultDescription="Success",ClientAppUsed="Browser",DeviceDetail=json.dumps({"deviceId":device_id,"displayName":device,"isManaged":True}),Location="GB",LocationDetails=json.dumps({"city":("London","Cardiff","Bristol","Manchester")[index%4],"countryOrRegion":"GB"}),RiskLevelDuringSignIn="none"))
         for event_number in range(10):
             days_ago=1+((index*5+event_number*9)%88); when=DAY-timedelta(days=days_ago)+timedelta(hours=8+(event_number%9),minutes=index%55); filename=f"Project_{(index+event_number)%40:02}_Document_{event_number:02}.docx"
             add(rows,historical,"CloudAppEvents",record(schemas,"CloudAppEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),AccountId=upn,AccountDisplayName=user["DisplayName"],Application="Microsoft SharePoint Online",ActionType=("FileAccessed","FilePreviewed","FileDownloaded")[event_number%3],ObjectName=filename,ObjectType="File",IPAddress=f"10.{20+index%20}.4.{10+index%200}",CountryCode="GB",IsExternalUser="false",OSPlatform="Windows 11",DeviceType="Desktop"))
@@ -125,6 +127,38 @@ def build_rows(schemas):
             days_ago=3+((index*3+event_number*17)%84); when=DAY-timedelta(days=days_ago)+timedelta(hours=9+event_number)
             recipient=roster[(index+event_number+1)%len(roster)]["UserPrincipalName"]
             add(rows,historical,"EmailEvents",record(schemas,"EmailEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),NetworkMessageId=f"normal-{index:03}-{event_number}",SenderFromAddress=upn,SenderFromDomain="creditsafe.com",RecipientEmailAddress=recipient,Subject=("Project update","Meeting notes","Monthly report")[event_number],DeliveryAction="Delivered",DeliveryLocation="Inbox",EmailDirection="Intra-org",ThreatTypes="",UrlCount="0"))
+        # Endpoint background activity prevents a single user or device from
+        # dominating a hunting table. The formulae are deterministic so
+        # facilitator validation queries remain repeatable between rebuilds.
+        common_destinations = (
+            ("teams.microsoft.com", "198.51.100.20", "ms-teams.exe"),
+            ("outlook.office.com", "198.51.100.21", "outlook.exe"),
+            ("login.microsoftonline.com", "198.51.100.22", "msedge.exe"),
+            ("creditsafe.sharepoint.com", "198.51.100.23", "onedrive.exe"),
+            ("settings-win.data.microsoft.com", "198.51.100.24", "svchost.exe"),
+            ("browser.events.data.microsoft.com", "198.51.100.25", "msedge.exe"),
+        )
+        for event_number in range(16):
+            days_ago=1+((index*11+event_number*5)%89)
+            when=DAY-timedelta(days=days_ago)+timedelta(hours=7+(event_number%11),minutes=(index*7+event_number*13)%60)
+            remote_url,remote_ip,process=common_destinations[(index+event_number)%len(common_destinations)]
+            add(rows,historical,"DeviceNetworkEvents",record(schemas,"DeviceNetworkEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),DeviceId=device_id,DeviceName=device,ActionType="ConnectionSuccess",LocalIP=f"10.{20+index%20}.4.{10+index%200}",LocalIPType="Private",LocalPort=49152+((index*31+event_number*17)%12000),RemoteIP=remote_ip,RemoteIPType="Public",RemotePort=443,RemoteUrl=remote_url,Protocol="Tcp",InitiatingProcessFileName=process,InitiatingProcessAccountUpn=upn,MachineGroup="Corporate Workstations"))
+        common_processes = (
+            ("msedge.exe", "msedge.exe --no-startup-window", "explorer.exe"),
+            ("outlook.exe", "outlook.exe /recycle", "explorer.exe"),
+            ("ms-teams.exe", "ms-teams.exe --process-start-args", "explorer.exe"),
+            ("onedrive.exe", "OneDrive.exe /background", "explorer.exe"),
+            ("backgroundTaskHost.exe", "backgroundTaskHost.exe -ServerName:App.AppX", "svchost.exe"),
+        )
+        for event_number,(filename,command,parent) in enumerate(common_processes):
+            days_ago=2+((index*13+event_number*19)%87)
+            when=DAY-timedelta(days=days_ago)+timedelta(hours=8+event_number*2,minutes=(index*3+event_number*11)%60)
+            add(rows,historical,"DeviceProcessEvents",record(schemas,"DeviceProcessEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),DeviceId=device_id,DeviceName=device,AccountUpn=upn,ActionType="ProcessCreated",FileName=filename,FolderPath="C:\\Program Files\\Microsoft",ProcessCommandLine=command,InitiatingProcessFileName=parent,InitiatingProcessAccountUpn=upn,MachineGroup="Corporate Workstations"))
+        for event_number in range(4):
+            days_ago=4+((index*17+event_number*23)%84)
+            when=DAY-timedelta(days=days_ago)+timedelta(hours=9+event_number,minutes=(index*5+event_number*7)%60)
+            extension=("docx","xlsx","pdf","pptx")[event_number]
+            add(rows,historical,"DeviceFileEvents",record(schemas,"DeviceFileEvents",TimeGenerated=stamp(when),Timestamp=stamp(when),DeviceId=device_id,DeviceName=device,ActionType="FileCreated",FileName=f"Working_Document_{(index+event_number)%50:02}.{extension}",FolderPath=f"C:\\Users\\{upn.split('@')[0]}\\OneDrive - Creditsafe\\Documents",InitiatingProcessAccountUpn=upn,InitiatingProcessFileName=("winword.exe","excel.exe","msedge.exe","powerpnt.exe")[event_number],MachineGroup="Corporate Workstations"))
 
     message_id = "msg-hr-clickfix-0903"
     add(rows, historical, "EmailEvents", record(schemas, "EmailEvents", TimeGenerated=stamp(september), Timestamp=stamp(september), NetworkMessageId=message_id, SenderFromAddress="benefits@hr-document.example", SenderFromDomain="hr-document.example", RecipientEmailAddress=LOUISE, Subject="Updated employee benefits document", DeliveryAction="Delivered", DeliveryLocation="Inbox", EmailDirection="Inbound", ThreatTypes="Phish", UrlCount="1"))
@@ -230,13 +264,15 @@ def build_rows(schemas):
 
 
 def write_build(output):
-    schemas=load_schemas(); batches=build_rows(schemas); output.mkdir(parents=True,exist_ok=True); manifest={"version":1,"database":"TabletopSIEM","schemas":schemas,"batches":[]}
+    schemas=load_schemas(); batches=build_rows(schemas); output.mkdir(parents=True,exist_ok=True); manifest={"version":2,"database":"TabletopSIEM","schemas":schemas,"batches":[]}
     for (offset,table),items in sorted(batches.items()):
+        items=sorted(items,key=lambda item:item.get("TimeGenerated") or item.get("Timestamp") or "")
         folder=output/("historical" if offset<0 else f"scheduled/t{offset:05}"); folder.mkdir(parents=True,exist_ok=True); path=folder/f"{table}.csv"; columns=[c["name"] for c in schemas[table]]
         with path.open("w",encoding="utf-8",newline="") as handle:
             writer=csv.DictWriter(handle,fieldnames=columns,extrasaction="raise",lineterminator="\n"); writer.writerows(items)
-        batch_id=hashlib.sha256(f"{offset}:{table}:{len(items)}".encode()).hexdigest()[:16]
-        manifest["batches"].append({"id":batch_id,"offset_seconds":offset,"table":table,"rows":len(items),"path":path.relative_to(output).as_posix()})
+        file_hash=hashlib.sha256(path.read_bytes()).hexdigest()
+        batch_id=hashlib.sha256(f"{offset}:{table}:{file_hash}".encode()).hexdigest()[:16]
+        manifest["batches"].append({"id":batch_id,"offset_seconds":offset,"table":table,"rows":len(items),"path":path.relative_to(output).as_posix(),"sha256":file_hash})
     (output/"manifest.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
     return manifest
 

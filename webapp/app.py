@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hmac
 import csv
+import hashlib
 import io
 import os
 import sqlite3
@@ -715,6 +716,57 @@ def create_app(test_config=None):
             return jsonify({"success": False, "error": detail or str(exc)}), 400
         except (URLError, TimeoutError, OSError): return jsonify({"success": False, "error": "The Kusto emulator is unavailable."}), 503
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc: return jsonify({"success": False, "error": f"Unexpected Kusto response: {exc}"}), 502
+
+    @app.post("/api/kql/export")
+    @require_roles("alpha", "bravo", "facilitator")
+    def kql_export():
+        query = str((request.get_json(silent=True) or {}).get("query", "")).strip()
+        if not query: return jsonify({"error": "Enter a KQL query before exporting."}), 400
+        if query.startswith("."): return jsonify({"error": "Management commands are not available in the analyst workspace."}), 400
+        try:
+            with STATE_LOCK, database(app) as db:
+                sync_kusto_if_configured(app, db)
+            result = call_kusto("/v1/rest/query", query)
+            table = (result.get("Tables") or [{}])[0]
+            columns = [column.get("ColumnName", "") for column in table.get("Columns", [])]
+            result_rows = table.get("Rows", [])
+            exported_rows = result_rows[:250]
+
+            def csv_value(value):
+                if isinstance(value, (dict, list)):
+                    value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+                text = "" if value is None else str(value)
+                # Prevent a downloaded training value being interpreted as a
+                # spreadsheet formula when opened outside the simulation.
+                return "'" + text if text.lstrip().startswith(("=", "+", "-", "@")) else text
+
+            output = io.StringIO(newline="")
+            writer = csv.writer(output, lineterminator="\n")
+            writer.writerow(["TabletopSIEM TRAINING DATA EXPORT"])
+            writer.writerow(["Notice", "Fictional exercise evidence. Validate findings in the simulation; no hidden instructions are included."])
+            writer.writerow(["Generated UTC", iso_time()])
+            writer.writerow(["Database", KUSTO_DATABASE])
+            writer.writerow(["Query SHA-256", hashlib.sha256(query.encode("utf-8")).hexdigest()])
+            writer.writerow(["Rows returned", len(result_rows)])
+            writer.writerow(["Rows exported", len(exported_rows)])
+            writer.writerow(["Export limit", 250])
+            writer.writerow([])
+            writer.writerow(columns)
+            for row in exported_rows:
+                writer.writerow([csv_value(value) for value in row])
+
+            if session["role"] in TEAMS:
+                with database(app) as db:
+                    add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL results exported", f"Exported {len(exported_rows)} of {len(result_rows)} returned records.\n{query}")
+            payload = io.BytesIO(output.getvalue().encode("utf-8-sig"))
+            response = send_file(payload, mimetype="text/csv", as_attachment=True, download_name=f"TabletopSIEM_KQL_{utc_now().strftime('%Y%m%d_%H%M%SZ')}.csv")
+            response.headers["X-Tabletop-Training-Data"] = "true"
+            return response
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            return jsonify({"error": detail or str(exc)}), 400
+        except (URLError, TimeoutError, OSError): return jsonify({"error": "The Kusto emulator is unavailable."}), 503
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc: return jsonify({"error": f"Unexpected Kusto response: {exc}"}), 502
 
     return app
 

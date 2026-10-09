@@ -32,6 +32,7 @@ class DataBuildTests(unittest.TestCase):
         self.assertTrue(any(item["offset_seconds"] < 0 for item in manifest["batches"]))
         self.assertTrue(any(item["offset_seconds"] == 25 * 60 for item in manifest["batches"]))
         self.assertTrue(any(item["table"] == "ThreatIntelligenceIndicator" for item in manifest["batches"]))
+        self.assertTrue(all(len(item["sha256"]) == 64 for item in manifest["batches"]))
 
     def test_records_never_use_columns_outside_schema(self):
         schemas = load_schemas()
@@ -63,6 +64,28 @@ class DataBuildTests(unittest.TestCase):
         positions = [index for index, item in enumerate(chronological) if item["IncidentNumber"] in relevant]
         self.assertEqual(len(positions), len(relevant))
         self.assertGreater(max(positions) - min(positions), len(relevant) - 1)
+
+    def test_endpoint_history_is_timestamped_and_distributed_across_users(self):
+        rows = build_rows(load_schemas())
+        network = rows[(-1, "DeviceNetworkEvents")]
+        processes = rows[(-1, "DeviceProcessEvents")]
+        files = rows[(-1, "DeviceFileEvents")]
+
+        self.assertGreaterEqual(len(network), 2000)
+        self.assertGreaterEqual(len({row["DeviceName"] for row in network}), 100)
+        self.assertGreaterEqual(len({row["DeviceName"] for row in processes}), 100)
+        self.assertGreaterEqual(len({row["DeviceName"] for row in files}), 100)
+        self.assertTrue(all(row["TimeGenerated"] and row["Timestamp"] for row in network + processes + files))
+
+    def test_historical_batches_are_written_in_time_order(self):
+        write_build(self.output)
+        path = self.output / "historical" / "DeviceNetworkEvents.csv"
+        schema = load_schemas()["DeviceNetworkEvents"]
+        columns = [column["name"] for column in schema]
+        time_index = columns.index("TimeGenerated")
+        with path.open(encoding="utf-8", newline="") as handle:
+            timestamps = [row[time_index] for row in csv.reader(handle)]
+        self.assertEqual(timestamps, sorted(timestamps))
 
 
 class IngestionTests(unittest.TestCase):

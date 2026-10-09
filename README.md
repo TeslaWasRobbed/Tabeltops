@@ -23,6 +23,8 @@ This repository contains the active Sentinel-style tabletop application, the Sto
 - [Red-herring plan](docs/design/RED_HERRING_PLAN.md)
 - [Authoritative schema contract](docs/design/SCHEMA_CONTRACT.md)
 - [FreshService interface design](docs/design/FRESHSERVICE_INTERFACE.md)
+- [Event-day facilitator runbook](docs/operations/EVENT_DAY_RUNBOOK.md)
+- [Recovery rehearsal](docs/operations/RECOVERY_REHEARSAL.md)
 - [Early narrative notes](docs/design/plan.txt)
 
 ## Active application
