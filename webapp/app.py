@@ -8,13 +8,14 @@ import csv
 import hashlib
 import io
 import os
+import re
 import secrets
 import sqlite3
 import threading
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from functools import wraps
+from functools import lru_cache, wraps
 from html import escape as html_escape
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -31,6 +32,8 @@ KUSTO_ENDPOINT = os.getenv("KUSTO_ENDPOINT", "http://127.0.0.1:8080").rstrip("/"
 KUSTO_DATABASE = os.getenv("KUSTO_DATABASE", "TabletopSIEM")
 SCENARIO_DIR = Path(os.getenv("TABLETOP_SCENARIO_DIR", str(REPO_ROOT / "scenario"))).resolve()
 FRESHSERVICE_PATH = SCENARIO_DIR / "freshservice_records.json"
+ANALYTICS_RULES_PATH = SCENARIO_DIR / "analytics_rules.json"
+SENTINEL_RULES_DIR = SCENARIO_DIR / "reference" / "sentinel-rules"
 DEFAULT_STATE_DB = APP_DIR / "data" / "tabletop.db"
 EXERCISE_DURATION_SECONDS = 5 * 60 * 60
 STATE_LOCK = threading.RLock()
@@ -274,6 +277,52 @@ def load_freshservice_records():
     if not isinstance(records, list) or any(not isinstance(item, dict) or not item.get("id") for item in records):
         raise ValueError("FreshService records must be a list of objects with IDs.")
     return records
+
+
+@lru_cache(maxsize=1)
+def load_analytics_rules():
+    """Return a read-only catalogue combining tenant exports and scenario rules."""
+    table_names = sorted(path.stem for path in (SCENARIO_DIR / "schema").glob("*.csv"))
+
+    def normalize(item, fallback_id):
+        properties = item.get("properties", item)
+        query = str(properties.get("query") or "").strip()
+        resource_name = str(item.get("name") or properties.get("id") or fallback_id)
+        guid = re.search(r"[0-9a-f]{8}-[0-9a-f-]{27,}", resource_name, re.IGNORECASE)
+        rule_id = str(properties.get("id") or (guid.group(0) if guid else fallback_id))
+        severity = str(properties.get("severity") or "Informational").title()
+        return {
+            "id": rule_id,
+            "name": str(properties.get("displayName") or properties.get("name") or "Unnamed analytics rule"),
+            "description": str(properties.get("description") or "No description is available for this rule."),
+            "enabled": bool(properties.get("enabled", True)),
+            "severity": severity,
+            "tactics": list(properties.get("tactics") or []),
+            "techniques": list(properties.get("techniques") or []),
+            "rule_type": str(item.get("kind") or properties.get("rule_type") or "Scheduled"),
+            "query_frequency": str(properties.get("queryFrequency") or properties.get("query_frequency") or "Not specified"),
+            "query_period": str(properties.get("queryPeriod") or properties.get("query_period") or "Not specified"),
+            "trigger_operator": str(properties.get("triggerOperator") or properties.get("trigger_operator") or "GreaterThan"),
+            "trigger_threshold": int(properties.get("triggerThreshold", properties.get("trigger_threshold", 0)) or 0),
+            "data_sources": [name for name in table_names if re.search(rf"\b{re.escape(name)}\b", query, re.IGNORECASE)],
+            "query": query,
+        }
+
+    rules = []
+    for path in sorted(SENTINEL_RULES_DIR.glob("*.json")):
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+        for index, resource in enumerate(document.get("resources") or []):
+            rules.append(normalize(resource, f"MS-{path.stem}-{index + 1}"))
+
+    custom = json.loads(ANALYTICS_RULES_PATH.read_text(encoding="utf-8"))
+    if not isinstance(custom, list):
+        raise ValueError("Analytics rules must be a list.")
+    for index, rule in enumerate(custom):
+        rules.append(normalize(rule, f"CS-AN-{index + 1:04d}"))
+
+    # Stable ordering keeps the page predictable while mixing scenario rules into
+    # the wider tenant catalogue rather than advertising upcoming exercise injects.
+    return sorted(rules, key=lambda rule: (rule["name"].casefold(), rule["id"]))
 
 
 def create_app(test_config=None):
@@ -679,6 +728,12 @@ def create_app(test_config=None):
             db.execute("DELETE FROM bookmarks WHERE id=? AND team_id=?", (bookmark_id,team_id))
             add_activity(db, team_id, row["incident_id"] or "", TEAMS[team_id], "Bookmark deleted", row["title"])
             return jsonify({"message": "Bookmark deleted."})
+
+    @app.get("/api/analytics/rules")
+    @require_roles("alpha", "bravo", "facilitator")
+    def analytics_rules():
+        rules = load_analytics_rules()
+        return jsonify({"rules": rules, "total": len(rules)})
 
     @app.get("/api/freshservice/records")
     @require_roles("alpha", "bravo", "facilitator")

@@ -44,7 +44,9 @@ def create_backup(source: Path, backup_dir: Path, *, now=None, retain: int = 96)
         destination.unlink(missing_ok=True)
         raise RuntimeError(f"Backup integrity check failed: {integrity}")
 
-    automatic = sorted(backup_dir.glob("tabletop-state-*.db"), key=lambda item: item.stat().st_mtime, reverse=True)
+    # The UTC timestamp in the filename is lexically sortable. Using it avoids
+    # retention errors on filesystems that coalesce modification times.
+    automatic = sorted(backup_dir.glob("tabletop-state-*.db"), key=lambda item: item.name, reverse=True)
     for expired in automatic[max(1, retain):]:
         expired.unlink()
     return destination

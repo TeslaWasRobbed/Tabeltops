@@ -27,6 +27,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b'id="reset-confirmation"', response.data)
         self.assertIn(b'id="export-query"', response.data)
         self.assertIn(b"Shift+click selects a row range", response.data)
+        self.assertIn(b'data-view="analytics"', response.data)
+        self.assertIn(b'id="analytics-rows"', response.data)
         self.assertIn(b'id="simulation-badge"', response.data)
         self.assertIn(b"Created / closed", response.data)
         self.assertNotIn(b"Next alert", response.data)
@@ -43,6 +45,21 @@ class WebAppTests(unittest.TestCase):
         facilitator.post("/login", data={"role": "facilitator", "code": "facilitator-training"})
         self.assertEqual(facilitator.get("/facilitator").status_code, 200)
         self.assertEqual(facilitator.get("/api/incidents").status_code, 403)
+
+    def test_analytics_catalogue_is_broad_read_only_and_uses_workspace_tables(self):
+        anonymous = app.test_client()
+        self.assertEqual(anonymous.get("/api/analytics/rules").status_code, 403)
+
+        response = self.client.get("/api/analytics/rules")
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(payload["total"], 400)
+        self.assertEqual(payload["total"], len(payload["rules"]))
+        custom = next(item for item in payload["rules"] if item["id"] == "CS-AN-1009")
+        self.assertEqual(custom["severity"], "High")
+        self.assertEqual(custom["trigger_threshold"], 50)
+        self.assertEqual(custom["data_sources"], ["CloudAppEvents"])
+        self.assertIn("CloudAppEvents", custom["query"])
 
     @patch("webapp.app.call_kusto")
     def test_query_results_are_normalized(self, call_kusto):
