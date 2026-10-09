@@ -21,6 +21,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"Connected to TabletopSIEM", response.data)
         self.assertIn(b"/api/kql/query", response.data)
         self.assertIn(b"TestEvents", response.data)
+        self.assertIn(b"Investigation context", response.data)
+        self.assertIn(b"Related FreshService records", response.data)
         self.assertNotIn(b"Next alert", response.data)
         self.assertNotIn(b'id="next-alert"', response.data)
 

@@ -43,11 +43,12 @@
 
       <section id="view-detail" class="view detail-view">
         <div class="pagehead"><div><button id="back-incidents" class="link">← Back to incidents</button><div id="detail-severity" class="severity"></div><h1 id="detail-title"></h1><div id="detail-id" class="mono"></div></div></div>
-        <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="activity">Activity log</button></div>
+        <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="context">Investigation context</button><button class="tab" data-tab="activity">Activity log</button></div>
         <div id="tab-overview" class="tab-panel active">
           <div class="detail-grid"><div class="card"><h2>Description</h2><p id="detail-description"></p><h2>MITRE ATT&amp;CK tactics</h2><p id="detail-tactics"></p><h2>Entities</h2><div id="detail-entities" class="entities"></div></div>
           <div class="card workflow"><h2>Incident workflow</h2><dl><dt>Status</dt><dd id="detail-status"></dd><dt>Owner</dt><dd id="detail-owner"></dd></dl><button id="activate" class="primary">Assign to me and set Active</button><button id="open-close" class="primary danger">Close incident</button><div id="readonly-closure" class="closure-summary"></div></div></div>
         </div>
+        <div id="tab-context" class="tab-panel"><div class="context-grid"><div class="card"><h2>Linked journal entries</h2><div id="context-journal"></div><button id="detail-add-journal" class="secondary context-action">+ Add journal entry</button></div><div class="card"><h2>Linked evidence bookmarks</h2><div id="context-bookmarks"></div></div><div class="card"><h2>Related FreshService records</h2><div id="context-freshservice"></div></div></div></div>
         <div id="tab-activity" class="tab-panel"><div class="card"><h2>Analyst activity</h2><div id="activity-list"></div></div></div>
       </section>
 
