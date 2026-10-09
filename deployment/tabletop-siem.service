@@ -1,0 +1,25 @@
+[Unit]
+Description=Tabletop Sentinel Training SIEM
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/tabletop-siem
+EnvironmentFile=-/etc/tabletop-siem.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/tabletop-siem/.venv/bin/gunicorn --config /home/ubuntu/tabletop-siem/deployment/gunicorn.conf.py webapp.app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillSignal=SIGQUIT
+TimeoutStopSec=40
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

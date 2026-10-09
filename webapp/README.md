@@ -14,6 +14,7 @@ Historical exercise implementations remain under `archive/`.
 | `TABLETOP_STATE_DB` | `webapp/data/tabletop.db` | Persistent exercise clock, incident workflow, and audit trail |
 | `TABLETOP_INGESTION_MANIFEST` | unset | Host path to the generated Kusto batch manifest |
 | `KUSTO_CONTAINER_DATA_ROOT` | `/kustodata/tabletop` | Matching data path inside the Kusto container |
+| `TABLETOP_BACKUP_DIR` | `/home/ubuntu/tabletop-backups` | Directory inspected by facilitator readiness checks |
 | `TABLETOP_SECRET_KEY` | development fallback | Secret used to sign access sessions; set this on the VM |
 | `TABLETOP_ALPHA_CODE` | `alpha-training` | Team Alpha access code; override on the VM |
 | `TABLETOP_BRAVO_CODE` | `bravo-training` | Team Bravo access code; override on the VM |
@@ -76,3 +77,33 @@ The initializer creates all 22 approved tables and ingests the historical
 batches. Once the facilitator starts the exercise, requests from the application
 ingest each due day-of batch. The SQLite ingestion ledger makes this idempotent
 across page refreshes and application restarts.
+
+## Production service on the VM
+
+Install the locked application dependencies into the virtual environment:
+
+```bash
+cd /home/ubuntu/tabletop-siem
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+The production service uses one Gunicorn worker with eight request threads. The
+single worker preserves in-process coordination for timed ingestion, while the
+threads allow the facilitator and both teams to use the application concurrently.
+Install the provided unit and restart it with:
+
+```bash
+sudo cp deployment/tabletop-siem.service /etc/systemd/system/tabletop-siem.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tabletop-siem
+```
+
+Run the end-to-end health check at any time:
+
+```bash
+.venv/bin/python deployment/health_check.py
+```
+
+It exits non-zero unless Flask, the scenario package, and the Kusto emulator are
+all available. Gunicorn access and error output is captured by the systemd
+journal and can be viewed with `sudo journalctl -u tabletop-siem`.
