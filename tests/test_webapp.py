@@ -29,6 +29,10 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(b"Shift+click selects a row range", response.data)
         self.assertIn(b'data-view="analytics"', response.data)
         self.assertIn(b'id="analytics-rows"', response.data)
+        self.assertIn(b'id="open-guide"', response.data)
+        self.assertIn(b'id="guide-modal"', response.data)
+        self.assertIn(b"Do not upload queries, results, screenshots", response.data)
+        self.assertIn(b"True positive", response.data)
         self.assertIn(b'id="simulation-badge"', response.data)
         self.assertIn(b"Created / closed", response.data)
         self.assertNotIn(b"Next alert", response.data)
@@ -43,7 +47,11 @@ class WebAppTests(unittest.TestCase):
 
         facilitator = app.test_client()
         facilitator.post("/login", data={"role": "facilitator", "code": "facilitator-training"})
-        self.assertEqual(facilitator.get("/facilitator").status_code, 200)
+        facilitator_workspace = facilitator.get("/facilitator")
+        self.assertEqual(facilitator_workspace.status_code, 200)
+        self.assertIn(b"Before admitting participants", facilitator_workspace.data)
+        self.assertIn(b"Operational guardrails", facilitator_workspace.data)
+        self.assertNotIn(b"Your objective", facilitator_workspace.data)
         self.assertEqual(facilitator.get("/api/incidents").status_code, 403)
 
     def test_analytics_catalogue_is_broad_read_only_and_uses_workspace_tables(self):
