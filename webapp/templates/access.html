@@ -12,20 +12,22 @@
     <section class="access-card">
       <div class="crumb">SOC Training / TabletopSIEM</div>
       <h1>Exercise workspace access</h1>
-      <p>Select your assigned workspace and enter its access code.</p>
+      <p>Select your assigned workspace, identify yourself and enter its access code.</p>
       <form action="/login" method="post">
         <label>Workspace
-          <select name="role" required>
+          <select id="access-role" name="role" required>
             <option value="alpha"{{ ' selected' if role == 'alpha' else '' }}>Team Alpha</option>
             <option value="bravo"{{ ' selected' if role == 'bravo' else '' }}>Team Bravo</option>
             <option value="facilitator"{{ ' selected' if role == 'facilitator' else '' }}>Facilitator</option>
           </select>
         </label>
+        <label id="analyst-name-field">Your name<input name="analyst_name" maxlength="60" autocomplete="name" placeholder="e.g. Alex Morgan"><small>Used for incident ownership and the activity audit.</small></label>
         <label>Access code<input name="code" type="password" autocomplete="current-password" required autofocus></label>
         {% if error %}<div class="access-error">{{ error }}</div>{% endif %}
         <button class="primary" type="submit">Open workspace</button>
       </form>
     </section>
   </main>
+  <script>const role=document.getElementById("access-role"),field=document.getElementById("analyst-name-field"),nameInput=field.querySelector("input");function updateIdentity(){const participant=role.value!=="facilitator";field.hidden=!participant;nameInput.required=participant}role.addEventListener("change",updateIdentity);updateIdentity();</script>
 </body>
 </html>

@@ -52,13 +52,15 @@ facilitator-visible activity trail.
 
 ## Exercise controls
 
-Sign into the protected **Facilitator** workspace to start, pause, resume, or
-reset the exercise. Team Alpha and Team Bravo share the exercise clock and
+Sign into the protected **Facilitator** workspace to start, pause, resume, end
+and lock, unlock, or reset the exercise. Team Alpha and Team Bravo share the exercise clock and
 Kusto evidence, but their incident status, owners, classifications, closure
 notes, and audit trails are stored independently.
 Starting establishes `T+00:00`; the first day-of alert is released at `T+00:05`.
 Alert state, owners, classifications, closure notes, and the analyst activity trail
 are persisted in SQLite, so refreshing the browser does not reset the exercise.
+Ending the exercise freezes an immutable copy of both teams' official submissions;
+the facilitator can unlock an accidental end into a paused state.
 
 ## Build and load exercise data on the VM
 

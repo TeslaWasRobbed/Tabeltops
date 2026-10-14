@@ -12,7 +12,7 @@ from webapp.app import HISTORICAL_INCIDENTS, app, create_app
 class WebAppTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
-        self.client.post("/login", data={"role": "alpha", "code": "alpha-training"})
+        self.client.post("/login", data={"role": "alpha", "code": "alpha-training", "analyst_name": "Alex Alpha"})
 
     def test_workspace_renders_kusto_query_client(self):
         response = self.client.get("/alpha")
@@ -43,6 +43,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(anonymous.get("/").status_code, 200)
         self.assertEqual(anonymous.get("/alpha").status_code, 200)
         self.assertEqual(anonymous.post("/api/kql/query", json={"query": "IdentityInfo | take 1"}).status_code, 403)
+        self.assertEqual(anonymous.post("/login", data={"role": "alpha", "code": "alpha-training"}).status_code, 400)
         self.assertEqual(anonymous.post("/login", data={"role": "facilitator", "code": "wrong"}).status_code, 401)
 
         facilitator = app.test_client()
@@ -138,8 +139,8 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.client = self.test_app.test_client()
         self.bravo = self.test_app.test_client()
         self.facilitator = self.test_app.test_client()
-        self.client.post("/login", data={"role": "alpha", "code": "alpha-code"})
-        self.bravo.post("/login", data={"role": "bravo", "code": "bravo-code"})
+        self.client.post("/login", data={"role": "alpha", "code": "alpha-code", "analyst_name": "Alex Alpha"})
+        self.bravo.post("/login", data={"role": "bravo", "code": "bravo-code", "analyst_name": "Bailey Bravo"})
         self.facilitator.post("/login", data={"role": "facilitator", "code": "fac-code"})
 
     def tearDown(self):
@@ -190,7 +191,7 @@ class ExerciseWorkflowTests(unittest.TestCase):
 
         active = self.client.patch(
             "/api/incidents/INC-2001",
-            json={"status": "Active", "actor": "Alpha Team", "owner": "Alpha Team"},
+            json={"status": "Active", "owner": "Alex Alpha"},
         )
         self.assertEqual(active.status_code, 200)
 
@@ -237,7 +238,7 @@ class ExerciseWorkflowTests(unittest.TestCase):
         self.fast_forward(5 * 60)
         changed = self.client.patch(
             "/api/incidents/INC-2001",
-            json={"status": "Active", "actor": "Team Alpha", "owner": "Team Alpha"},
+            json={"status": "Active", "owner": "Alex Alpha"},
         )
         self.assertEqual(changed.status_code, 200)
 
@@ -250,6 +251,60 @@ class ExerciseWorkflowTests(unittest.TestCase):
         bravo_alert = next(item for item in review["teams"]["bravo"]["incidents"] if item["id"] == "INC-2001")
         self.assertEqual(alpha_alert["status"], "Active")
         self.assertEqual(bravo_alert["status"], "New")
+
+    def test_named_analysts_have_team_presence_and_individual_ownership(self):
+        second_alpha = self.test_app.test_client()
+        second_alpha.post("/login", data={"role": "alpha", "code": "alpha-code", "analyst_name": "Morgan Alpha"})
+        alpha_presence = self.client.get("/api/team/presence").get_json()["people"]
+        bravo_presence = self.bravo.get("/api/team/presence").get_json()["people"]
+        self.assertEqual({person["display_name"] for person in alpha_presence}, {"Alex Alpha", "Morgan Alpha"})
+        self.assertEqual({person["display_name"] for person in bravo_presence}, {"Bailey Bravo"})
+
+        self.fast_forward(5 * 60)
+        assigned = self.client.patch("/api/incidents/INC-2001", json={"status": "Active", "owner": "Morgan Alpha"})
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(assigned.get_json()["incident"]["owner"], "Morgan Alpha")
+        activity = self.facilitator.get("/api/facilitator/review").get_json()["activity"]
+        self.assertEqual(activity[0]["actor"], "Alex Alpha")
+
+        reassigned = second_alpha.patch("/api/incidents/INC-2001/owner", json={"owner": "Alex Alpha"})
+        self.assertEqual(reassigned.status_code, 200)
+        self.assertEqual(reassigned.get_json()["incident"]["owner"], "Alex Alpha")
+
+        exported = self.facilitator.get("/api/facilitator/export")
+        with zipfile.ZipFile(io.BytesIO(exported.data)) as archive:
+            alpha_report = archive.read("Team_Alpha_Report.html").decode("utf-8")
+            self.assertIn("<th>Analyst</th>", alpha_report)
+            self.assertIn("Alex Alpha", alpha_report)
+
+    @patch("webapp.app.call_kusto")
+    def test_facilitator_end_locks_submission_and_debrief_queries_are_not_audited(self, call_kusto):
+        call_kusto.return_value = {"Tables": [{"Columns": [{"ColumnName": "Value"}], "Rows": [[1]]}]}
+        self.facilitator.post("/api/facilitator/exercise/start", json={})
+        self.fast_forward(5 * 60)
+        self.client.patch("/api/incidents/INC-2001", json={"status": "Active", "owner": "Alex Alpha"})
+        before = len(self.facilitator.get("/api/facilitator/review").get_json()["activity"])
+
+        self.assertEqual(self.facilitator.post("/api/facilitator/exercise/end", json={}).status_code, 400)
+        ended = self.facilitator.post("/api/facilitator/exercise/end", json={"confirmation": "END"})
+        self.assertEqual(ended.status_code, 200)
+        self.assertEqual(ended.get_json()["status"], "ended")
+        self.assertTrue(ended.get_json()["locked"])
+        self.assertEqual(self.client.post("/api/journal", json={"category": "General note", "content": "Too late"}).status_code, 423)
+        self.assertEqual(self.client.patch("/api/incidents/INC-2001", json={"status": "Closed", "classification": "Undetermined", "closure_notes": "Too late"}).status_code, 423)
+
+        query = self.client.post("/api/kql/query", json={"query": "IdentityInfo | take 1"})
+        self.assertEqual(query.status_code, 200)
+        after = len(self.facilitator.get("/api/facilitator/review").get_json()["activity"])
+        self.assertEqual(after, before)
+        db = sqlite3.connect(self.db_path)
+        self.assertEqual(db.execute("SELECT COUNT(*) FROM exercise_submission").fetchone()[0], 1)
+        db.close()
+
+        unlocked = self.facilitator.post("/api/facilitator/exercise/unlock", json={"confirmation": "UNLOCK"})
+        self.assertEqual(unlocked.status_code, 200)
+        self.assertEqual(unlocked.get_json()["status"], "paused")
+        self.assertFalse(unlocked.get_json()["locked"])
 
     def test_bookmarks_are_team_isolated_exported_and_cleared_by_reset(self):
         self.fast_forward(5 * 60)

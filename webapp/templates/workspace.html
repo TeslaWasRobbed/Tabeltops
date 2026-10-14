@@ -11,9 +11,10 @@
   <header class="topbar">
     <div class="brand"><span class="waffle">⠿</span><span class="brand-name">Microsoft Sentinel</span><span id="simulation-badge" class="simulation">TRAINING SIMULATION</span></div>
     <div class="exercise-strip"><span id="run-dot" class="run-dot"></span><span id="run-status">Not started</span><strong id="clock">T+00:00:00</strong></div>
-    <div class="team">{{ workspace_label }} <span class="avatar">{{ 'FC' if is_facilitator else ('TA' if team_id == 'alpha' else 'TB') }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
+    <div class="team"><span class="identity-label"><strong>{{ analyst_name }}</strong><small>{{ workspace_label }}</small></span><span class="avatar">{{ analyst_initials or 'FC' }}</span><form action="/logout" method="post"><button class="logout-link" title="Sign out">Sign out</button></form></div>
   </header>
   <div id="connection-banner" class="connection-banner" role="status" aria-live="polite" aria-hidden="true"><strong>Connection interrupted</strong><span id="connection-message">Attempting to reconnect…</span></div>
+  <div id="lock-banner" class="lock-banner" role="status" aria-live="polite" aria-hidden="true"><strong>Exercise ended — official submissions are locked</strong><span>Existing work remains available for review and debrief.</span></div>
   <div class="shell">
     <aside class="sidebar">
       <div class="workspace-name"><strong>SOC Training</strong><small>TabletopSIEM</small></div>
@@ -31,6 +32,7 @@
         <div class="nav-divider"></div>
         <button id="open-guide" class="nav guide-link" type="button"><span>?</span>Exercise guide</button>
       </nav>
+      {% if not is_facilitator %}<div id="team-presence" class="team-presence"><span class="presence-heading">Team presence</span><div class="presence-loading">Connecting roster…</div></div>{% endif %}
       <div class="connection"><span>● Connected</span><small>Connected to {{ kusto_database }}</small></div>
     </aside>
     <main>
@@ -50,7 +52,7 @@
         <div class="tabs"><button class="tab active" data-tab="overview">Overview</button><button class="tab" data-tab="context">Investigation context</button><button class="tab" data-tab="activity">Activity log</button></div>
         <div id="tab-overview" class="tab-panel active">
           <div class="detail-grid"><div class="card"><h2>Description</h2><p id="detail-description"></p><h2>MITRE ATT&amp;CK tactics</h2><p id="detail-tactics"></p><h2>Entities</h2><div id="detail-entities" class="entities"></div></div>
-          <div class="card workflow"><h2>Incident workflow</h2><dl><dt>Status</dt><dd id="detail-status"></dd><dt>Owner</dt><dd id="detail-owner"></dd></dl><button id="activate" class="primary">Assign to me and set Active</button><button id="open-close" class="primary danger">Close incident</button><div id="readonly-closure" class="closure-summary"></div></div></div>
+          <div class="card workflow"><h2>Incident workflow</h2><dl><dt>Status</dt><dd id="detail-status"></dd><dt>Owner</dt><dd id="detail-owner"></dd></dl><label id="owner-field" class="owner-field">Assign analyst<select id="incident-owner"></select></label><button id="activate" class="primary">Assign and set Active</button><button id="reassign" class="secondary">Update owner</button><button id="open-close" class="primary danger">Close incident</button><div id="readonly-closure" class="closure-summary"></div></div></div>
         </div>
         <div id="tab-context" class="tab-panel"><div class="context-grid"><div class="card"><h2>Linked journal entries</h2><div id="context-journal"></div><button id="detail-add-journal" class="secondary context-action">+ Add journal entry</button></div><div class="card"><h2>Linked evidence bookmarks</h2><div id="context-bookmarks"></div></div><div class="card"><h2>Related FreshService records</h2><div id="context-freshservice"></div></div></div></div>
         <div id="tab-activity" class="tab-panel"><div class="card"><h2>Analyst activity</h2><div id="activity-list"></div></div></div>
@@ -87,8 +89,9 @@
       <section id="view-facilitator" class="view{{ ' active' if is_facilitator else '' }}">
         <div class="pagehead"><div><div class="crumb">Exercise administration</div><h1>Facilitator control</h1><p>Start and monitor the timed simulation. This view never scores analyst answers.</p></div><div class="page-actions"><button id="export-exercise" class="secondary">⇩ Export grading pack</button><span class="facilitator-badge">FACILITATOR ONLY</span></div></div>
         <div class="facilitator-content">
-          <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
+          <div class="control-card"><div><span class="eyebrow">Exercise clock</span><strong id="fac-clock">T+00:00:00</strong><span id="fac-state">Not started</span></div><div class="control-actions"><button id="start-exercise" class="primary">Start exercise</button><button id="pause-exercise" class="secondary">Pause</button><button id="resume-exercise" class="secondary">Resume</button><button id="end-exercise" class="danger-outline">End &amp; lock</button><button id="unlock-exercise" class="secondary">Unlock</button><button id="reset-exercise" class="danger-outline">Reset</button></div></div>
           <div class="fac-metrics"><div><strong id="fac-released">0 / 16</strong><span>Alerts released</span></div><div><strong id="fac-active">A 0 · B 0</strong><span>Active by team</span></div><div><strong id="fac-closed">A 0 · B 0</strong><span>Closed by team</span></div></div>
+          <div class="card"><div class="card-heading"><div><h2>Analyst presence and workload</h2><p class="muted">Live participant identity, availability and current investigation focus.</p></div></div><div id="fac-presence" class="fac-presence"><div class="empty-card">No analysts are signed in.</div></div></div>
           <div class="card readiness-card"><div class="card-heading"><div><h2>System readiness</h2><p class="muted">Run live preflight checks before admitting participants or starting the exercise.</p></div><button id="run-readiness" class="secondary">Run readiness checks</button></div><div id="readiness-summary" class="readiness-summary not-run">Checks have not been run in this browser session.</div><div id="readiness-checks" class="readiness-checks"></div></div>
           <div class="card"><h2>Analyst decisions and closure notes</h2><p class="muted">Saved independently for Team Alpha and Team Bravo. No correctness or score is shown to participants.</p><div class="fac-review-filters"><input id="fac-review-search" type="search" placeholder="Search incident or closure notes"><select id="fac-review-team"><option value="all">Both teams</option><option value="Team Alpha">Team Alpha</option><option value="Team Bravo">Team Bravo</option></select><select id="fac-review-status"><option value="all">All statuses</option><option>New</option><option>Active</option><option>Closed</option></select></div><div class="table-scroll fac-table"><table><thead><tr><th>Team</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Closed</th></tr></thead><tbody id="review-rows"></tbody></table></div></div>
           <div class="card"><div class="card-heading"><div><h2>Private facilitator observations</h2><p class="muted">Timestamped marking notes. These are never visible to either team.</p></div><button id="add-fac-observation" class="primary">+ Add observation</button></div><div id="fac-observations"><div class="empty-card">No facilitator observations recorded.</div></div></div>
@@ -97,6 +100,26 @@
       </section>
     </main>
   </div>
+</div>
+
+<div id="end-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="end-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="end-heading">
+    <div class="modal-head"><h2 id="end-heading">End and lock the exercise?</h2><button type="button" id="cancel-end" class="icon-button">×</button></div>
+    <div class="lock-confirmation"><p>This freezes the official clock and creates the submission used for grading. Teams can review their work but cannot change decisions, notes, bookmarks or evidence exports.</p></div>
+    <label>Confirmation<input id="end-confirmation" autocomplete="off" required placeholder="Type END"></label>
+    <div id="end-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-end-2" class="secondary">Cancel</button><button type="submit" class="danger">End and lock</button></div>
+  </form>
+</div>
+
+<div id="unlock-modal" class="modal-backdrop" aria-hidden="true">
+  <form id="unlock-form" class="modal" role="dialog" aria-modal="true" aria-labelledby="unlock-heading">
+    <div class="modal-head"><h2 id="unlock-heading">Reopen team submissions?</h2><button type="button" id="cancel-unlock" class="icon-button">×</button></div>
+    <div class="lock-confirmation"><p>The frozen submission will be discarded and the exercise will return to Paused. Record why this was necessary in facilitator observations.</p></div>
+    <label>Confirmation<input id="unlock-confirmation" autocomplete="off" required placeholder="Type UNLOCK"></label>
+    <div id="unlock-error" class="form-error"></div>
+    <div class="modal-actions"><button type="button" id="cancel-unlock-2" class="secondary">Cancel</button><button type="submit" class="danger">Reopen submissions</button></div>
+  </form>
 </div>
 
 <div id="reset-modal" class="modal-backdrop" aria-hidden="true">
@@ -130,9 +153,9 @@
       {% else %}
       <div class="guide-callout facilitator-guide"><strong>Facilitator objective</strong><p>Operate the timed simulation, preserve independent team decisions and capture observations without coaching participants toward the narrative.</p></div>
       <section class="guide-section"><h3>Before admitting participants</h3><ol><li>Run <strong>System readiness</strong> and resolve every failed check.</li><li>Confirm the clean-state backup is current and Kusto reports all expected tables and historical batches.</li><li>Open Team Alpha and Team Bravo in separate browser profiles and confirm their access codes, incident history, Logs, Analytics and FreshService views.</li><li>Keep the event-day runbook and recovery instructions available outside the application.</li></ol></section>
-      <section class="guide-section"><h3>Exercise controls</h3><div class="guide-flow"><div><strong>Start</strong><span>Starts the server-owned five-hour clock and timed ingestion. Start is available once per clean run.</span></div><div><strong>Pause / Resume</strong><span>Use for genuine operational interruptions. Elapsed exercise time is preserved.</span></div><div><strong>Reset</strong><span>Clears all day-of team decisions, notes, bookmarks, observations and activity. Use only after exporting or confirming recovery.</span></div></div></section>
+      <section class="guide-section"><h3>Exercise controls</h3><div class="guide-flow"><div><strong>Start</strong><span>Starts the server-owned five-hour clock and timed ingestion. Start is available once per clean run.</span></div><div><strong>Pause / Resume</strong><span>Use for genuine operational interruptions. Elapsed exercise time is preserved.</span></div><div><strong>End &amp; lock</strong><span>Freezes both teams' official submissions and prevents further decisions, notes, bookmarks or evidence exports. Debrief queries remain available.</span></div><div><strong>Unlock</strong><span>Reopens both submissions in a paused state if the facilitator ended the exercise accidentally.</span></div><div><strong>Reset</strong><span>Clears all day-of team decisions, notes, bookmarks, observations and activity. Use only after exporting or confirming recovery.</span></div></div></section>
       <section class="guide-section"><h3>Monitoring and marking</h3><ul><li>The facilitator view shows each team’s status, ownership, classification and closure notes independently.</li><li>Add private observations for positive practice, coaching points, decisions and technical issues. Participants cannot see them.</li><li>The activity audit records queries, ticket access, bookmarks, journal activity and accountable evidence exports.</li><li>Use <strong>Export grading pack</strong> at the end to download both team reports, facilitator observations, incident decisions and raw exercise data.</li><li>No correctness or score is displayed to participants during the exercise.</li></ul></section>
-      <section class="guide-section"><h3>Operational guardrails</h3><ul><li>Do not identify red herrings, confirm hypotheses or disclose future alert timing.</li><li>For a genuine fault, pause only when participant fairness is affected and record a Technical note.</li><li>Do not reset a live exercise as a troubleshooting step. Follow the recovery runbook and retain the state database first.</li><li>At exercise end, pause the clock, capture final observations, export the grading pack and verify the automatic state backup.</li></ul></section>
+      <section class="guide-section"><h3>Operational guardrails</h3><ul><li>Do not identify red herrings, confirm hypotheses or disclose future alert timing.</li><li>For a genuine fault, pause only when participant fairness is affected and record a Technical note.</li><li>Do not reset a live exercise as a troubleshooting step. Follow the recovery runbook and retain the state database first.</li><li>At exercise end, capture final observations, choose End &amp; lock, export the grading pack and verify the automatic state backup.</li></ul></section>
       {% endif %}
     </div>
     <div class="modal-actions"><button type="button" id="close-guide-2" class="secondary">Close guide</button></div>
@@ -195,7 +218,7 @@
   </form>
 </div>
 <div id="toast" class="toast"></div>
-<script>window.APP_CONFIG={database:{{ kusto_database|tojson }},role:{{ role|tojson }},team:{{ team_id|tojson }},workspaceLabel:{{ workspace_label|tojson }}};</script>
+<script>window.APP_CONFIG={database:{{ kusto_database|tojson }},role:{{ role|tojson }},team:{{ team_id|tojson }},workspaceLabel:{{ workspace_label|tojson }},analystName:{{ analyst_name|tojson }}};</script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

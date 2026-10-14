@@ -32,7 +32,10 @@ def request_json(opener, url: str):
 
 def authenticated_opener(base_url: str, role: str, code: str):
     opener = build_opener(HTTPCookieProcessor(CookieJar()))
-    payload = urlencode({"role": role, "code": code}).encode("utf-8")
+    form = {"role": role, "code": code}
+    if role in {"alpha", "bravo"}:
+        form["analyst_name"] = f"Deployment Check {role.title()}"
+    payload = urlencode(form).encode("utf-8")
     with opener.open(Request(f"{base_url}/login", data=payload, method="POST"), timeout=10) as response:
         if response.status != 200:
             raise RuntimeError(f"{role} login returned HTTP {response.status}")
@@ -56,6 +59,9 @@ def run_smoke_test(base_url: str, codes: dict[str, str]):
             fs_status, freshservice = request_json(opener, f"{base_url}/api/freshservice/records")
             if fs_status != 200 or len(freshservice.get("records", [])) < 1:
                 raise RuntimeError(f"{role} FreshService evidence is unavailable")
+        with opener.open(Request(f"{base_url}/logout", data=b"", method="POST"), timeout=10) as response:
+            if response.status != 200:
+                raise RuntimeError(f"{role} logout returned HTTP {response.status}")
 
     return {"health": health, "checks": checks}
 

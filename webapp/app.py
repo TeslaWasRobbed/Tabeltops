@@ -14,7 +14,7 @@ import sqlite3
 import threading
 import zipfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from html import escape as html_escape
 from pathlib import Path
@@ -160,6 +160,9 @@ def require_roles(*allowed):
         def protected(*args, **kwargs):
             if session.get("role") not in allowed:
                 return jsonify({"error": "Sign in with the appropriate exercise access code."}), 403
+            if session.get("role") in TEAMS and not session.get("analyst_name"):
+                session.clear()
+                return jsonify({"error": "Sign in again and enter your analyst name."}), 403
             return view(*args, **kwargs)
         return protected
     return decorate
@@ -180,6 +183,9 @@ def init_db(app):
     path.parent.mkdir(parents=True, exist_ok=True)
     with database(app) as db:
         db.execute("CREATE TABLE IF NOT EXISTS exercise_state (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), status TEXT NOT NULL, started_at TEXT, updated_at TEXT NOT NULL, accumulated_seconds REAL NOT NULL DEFAULT 0)")
+        exercise_columns = {row[1] for row in db.execute("PRAGMA table_info(exercise_state)")}
+        if "finalized_at" not in exercise_columns:
+            db.execute("ALTER TABLE exercise_state ADD COLUMN finalized_at TEXT")
         incident_columns = {row[1] for row in db.execute("PRAGMA table_info(incident_state)")}
         if incident_columns and "team_id" not in incident_columns:
             db.execute("ALTER TABLE incident_state RENAME TO incident_state_single_team")
@@ -220,6 +226,12 @@ def init_db(app):
             id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL,
             team_id TEXT, incident_id TEXT, content TEXT NOT NULL,
             created_at TEXT NOT NULL, elapsed_seconds INTEGER NOT NULL DEFAULT 0)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS analyst_sessions (
+            session_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, display_name TEXT NOT NULL,
+            current_incident TEXT, signed_in_at TEXT NOT NULL, last_seen_at TEXT NOT NULL)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS exercise_submission (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1), finalized_at TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL)""")
         db.execute("INSERT OR IGNORE INTO exercise_state(singleton,status,updated_at,accumulated_seconds) VALUES(1,'not_started',?,0)", (iso_time(),))
 
 
@@ -229,8 +241,8 @@ def exercise_snapshot(db):
     if row["status"] == "running" and row["started_at"]:
         elapsed += max(0, (utc_now() - parse_time(row["started_at"])).total_seconds())
     elapsed = min(elapsed, EXERCISE_DURATION_SECONDS)
-    status = "completed" if elapsed >= EXERCISE_DURATION_SECONDS else row["status"]
-    return {"status": status, "elapsed_seconds": int(elapsed), "duration_seconds": EXERCISE_DURATION_SECONDS, "started_at": row["started_at"], "released_alerts": sum(a["release_offset"] <= elapsed for a in DAY_ALERTS), "total_alerts": len(DAY_ALERTS)}
+    status = row["status"] if row["status"] == "ended" else ("completed" if elapsed >= EXERCISE_DURATION_SECONDS else row["status"])
+    return {"status": status, "locked": status in {"ended", "completed"}, "finalized_at": row["finalized_at"], "elapsed_seconds": int(elapsed), "duration_seconds": EXERCISE_DURATION_SECONDS, "started_at": row["started_at"], "released_alerts": sum(a["release_offset"] <= elapsed for a in DAY_ALERTS), "total_alerts": len(DAY_ALERTS)}
 
 
 def materialize_incident(definition, state=None):
@@ -246,6 +258,62 @@ def add_activity(db, team_id, incident_id, actor, action, detail):
     now = iso_time()
     elapsed = exercise_snapshot(db)["elapsed_seconds"]
     db.execute("INSERT INTO activity(team_id,incident_id,actor,action,detail,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?,?)", (team_id, incident_id or "", actor, action, detail, now, elapsed))
+
+
+def current_actor():
+    return str(session.get("analyst_name") or TEAMS.get(session.get("role"), "Facilitator"))
+
+
+def team_workspace_locked(db):
+    return exercise_snapshot(db)["locked"]
+
+
+def locked_response():
+    return jsonify({"error": "The exercise has ended and the official submission is locked."}), 423
+
+
+def touch_presence(db, incident_id=None, update_assignment=False):
+    team_id = session.get("role")
+    session_id = session.get("analyst_session_id")
+    if team_id not in TEAMS or not session_id:
+        return
+    now = iso_time()
+    db.execute("DELETE FROM analyst_sessions WHERE last_seen_at < ?", (iso_time(utc_now().replace(microsecond=0) - timedelta(hours=12)),))
+    existing = db.execute("SELECT current_incident,signed_in_at FROM analyst_sessions WHERE session_id=?", (session_id,)).fetchone()
+    current_incident = incident_id if update_assignment else (existing["current_incident"] if existing else None)
+    signed_in = existing["signed_in_at"] if existing else now
+    db.execute("""INSERT INTO analyst_sessions(session_id,team_id,display_name,current_incident,signed_in_at,last_seen_at)
+        VALUES(?,?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET display_name=excluded.display_name,
+        current_incident=excluded.current_incident,last_seen_at=excluded.last_seen_at""",
+        (session_id, team_id, current_actor(), current_incident, signed_in, now))
+
+
+def presence_for_team(db, team_id):
+    now = utc_now(); people = []
+    for row in db.execute("SELECT display_name,current_incident,signed_in_at,last_seen_at FROM analyst_sessions WHERE team_id=? ORDER BY display_name", (team_id,)):
+        age = max(0, int((now - parse_time(row["last_seen_at"])).total_seconds()))
+        name = row["display_name"]
+        initials = "".join(part[0] for part in name.split()[:2]).upper() or "?"
+        people.append({"display_name": name, "initials": initials, "current_incident": row["current_incident"], "online": age <= 45, "last_active_seconds": age})
+    return people
+
+
+def capture_submission(db):
+    snapshot = {"exercise": exercise_snapshot(db), "teams": {}}
+    for team_id, team_name in TEAMS.items():
+        bookmarks = []
+        for row in db.execute("SELECT * FROM bookmarks WHERE team_id=? ORDER BY id", (team_id,)):
+            item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}"); bookmarks.append(item)
+        snapshot["teams"][team_id] = {
+            "name": team_name,
+            "incidents": [item for item in get_visible_incidents(db, team_id) if not item["historical"]],
+            "bookmarks": bookmarks,
+            "journal": [dict(row) for row in db.execute("SELECT * FROM journal_entries WHERE team_id=? ORDER BY id", (team_id,))],
+            "activity": [dict(row) for row in db.execute("SELECT * FROM activity WHERE team_id=? ORDER BY id", (team_id,))],
+        }
+    now = iso_time()
+    db.execute("INSERT OR REPLACE INTO exercise_submission(singleton,finalized_at,snapshot_json) VALUES(1,?,?)", (now, json.dumps(snapshot, ensure_ascii=False)))
+    return now
 
 
 def get_visible_incidents(db, team_id, include_future=False):
@@ -349,12 +417,17 @@ def create_app(test_config=None):
     def workspace(role):
         if role not in ROLES: return jsonify({"error": "Workspace not found."}), 404
         if session.get("role") != role: return render_template("access.html", role=role, error=None)
+        if role in TEAMS and not session.get("analyst_name"):
+            session.clear()
+            return render_template("access.html", role=role, error="Sign in again and enter your analyst name.")
         return render_template(
             "workspace.html", kusto_database=KUSTO_DATABASE,
             classifications=CLASSIFICATIONS, journal_categories=JOURNAL_CATEGORIES,
             facilitator_observation_categories=FACILITATOR_OBSERVATION_CATEGORIES, role=role,
             team_id=role if role in TEAMS else None,
             workspace_label=TEAMS.get(role, "Facilitator"),
+            analyst_name=session.get("analyst_name", "Facilitator"),
+            analyst_initials="".join(part[0] for part in str(session.get("analyst_name") or "Facilitator").split()[:2]).upper(),
             is_facilitator=role == "facilitator",
         )
 
@@ -362,14 +435,25 @@ def create_app(test_config=None):
     def login():
         role = str(request.form.get("role") or "").lower()
         code = str(request.form.get("code") or "")
+        analyst_name = " ".join(str(request.form.get("analyst_name") or "").strip().split())[:60]
         expected = app.config["ACCESS_CODES"].get(role)
         if role not in ROLES or not expected or not hmac.compare_digest(code, expected):
             return render_template("access.html", role=role if role in ROLES else None, error="The access code is incorrect."), 401
+        if role in TEAMS and len(analyst_name) < 2:
+            return render_template("access.html", role=role, error="Enter your name so activity and incident ownership can be attributed."), 400
         session.clear(); session["role"] = role
+        session["analyst_name"] = analyst_name if role in TEAMS else "Facilitator"
+        if role in TEAMS:
+            session["analyst_session_id"] = secrets.token_urlsafe(16)
+            with database(app) as db:
+                db.execute("DELETE FROM analyst_sessions WHERE team_id=? AND lower(display_name)=lower(?)", (role, analyst_name))
+                touch_presence(db)
         return redirect(url_for("workspace", role=role))
 
     @app.post("/logout")
     def logout():
+        if session.get("analyst_session_id"):
+            with database(app) as db: db.execute("DELETE FROM analyst_sessions WHERE session_id=?", (session["analyst_session_id"],))
         session.clear()
         return redirect(url_for("access"))
 
@@ -391,25 +475,38 @@ def create_app(test_config=None):
     @app.post("/api/facilitator/exercise/<action>")
     @require_roles("facilitator")
     def control_exercise(action):
-        if action not in {"start", "pause", "resume", "reset"}: return jsonify({"error": "Unknown exercise control."}), 404
+        if action not in {"start", "pause", "resume", "end", "unlock", "reset"}: return jsonify({"error": "Unknown exercise control."}), 404
         now = utc_now()
+        body = request.get_json(silent=True) or {}
         with STATE_LOCK, database(app) as db:
             state = exercise_snapshot(db)
             if action == "start":
                 if state["status"] != "not_started": return jsonify({"error": "The exercise has already been started."}), 409
-                db.execute("UPDATE exercise_state SET status='running',started_at=?,updated_at=?,accumulated_seconds=0 WHERE singleton=1", (iso_time(now), iso_time(now)))
+                db.execute("DELETE FROM exercise_submission")
+                db.execute("UPDATE exercise_state SET status='running',started_at=?,updated_at=?,accumulated_seconds=0,finalized_at=NULL WHERE singleton=1", (iso_time(now), iso_time(now)))
             elif action == "pause":
                 if state["status"] != "running": return jsonify({"error": "Only a running exercise can be paused."}), 409
                 db.execute("UPDATE exercise_state SET status='paused',started_at=NULL,updated_at=?,accumulated_seconds=? WHERE singleton=1", (iso_time(now), state["elapsed_seconds"]))
             elif action == "resume":
                 if state["status"] != "paused": return jsonify({"error": "Only a paused exercise can be resumed."}), 409
                 db.execute("UPDATE exercise_state SET status='running',started_at=?,updated_at=? WHERE singleton=1", (iso_time(now), iso_time(now)))
+            elif action == "end":
+                if str(body.get("confirmation", "")) != "END": return jsonify({"error": "Type END to confirm and lock submissions."}), 400
+                if state["status"] not in {"running", "paused", "completed"}: return jsonify({"error": "Only an active or completed exercise can be ended."}), 409
+                finalized_at = iso_time(now)
+                db.execute("UPDATE exercise_state SET status='ended',started_at=NULL,updated_at=?,accumulated_seconds=?,finalized_at=? WHERE singleton=1", (finalized_at, state["elapsed_seconds"], finalized_at))
+                capture_submission(db)
+            elif action == "unlock":
+                if str(body.get("confirmation", "")) != "UNLOCK": return jsonify({"error": "Type UNLOCK to reopen submissions."}), 400
+                if state["status"] != "ended": return jsonify({"error": "Only an ended exercise can be unlocked."}), 409
+                db.execute("DELETE FROM exercise_submission")
+                db.execute("UPDATE exercise_state SET status='paused',started_at=NULL,updated_at=?,finalized_at=NULL WHERE singleton=1", (iso_time(now),))
             else:
-                if str((request.get_json(silent=True) or {}).get("confirmation", "")) != "RESET": return jsonify({"error": "Type RESET to confirm."}), 400
+                if str(body.get("confirmation", "")) != "RESET": return jsonify({"error": "Type RESET to confirm."}), 400
                 if app.config.get("INGESTION_MANIFEST"):
                     reset_dataset(db, app.config["INGESTION_MANIFEST"], app.config["KUSTO_CONTAINER_DATA_ROOT"])
-                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state"); db.execute("DELETE FROM bookmarks"); db.execute("DELETE FROM journal_entries"); db.execute("DELETE FROM facilitator_observations")
-                db.execute("UPDATE exercise_state SET status='not_started',started_at=NULL,updated_at=?,accumulated_seconds=0 WHERE singleton=1", (iso_time(now),))
+                db.execute("DELETE FROM activity"); db.execute("DELETE FROM incident_state"); db.execute("DELETE FROM bookmarks"); db.execute("DELETE FROM journal_entries"); db.execute("DELETE FROM facilitator_observations"); db.execute("DELETE FROM exercise_submission"); db.execute("UPDATE analyst_sessions SET current_incident=NULL")
+                db.execute("UPDATE exercise_state SET status='not_started',started_at=NULL,updated_at=?,accumulated_seconds=0,finalized_at=NULL WHERE singleton=1", (iso_time(now),))
             return jsonify(exercise_snapshot(db))
 
     @app.get("/api/incidents")
@@ -417,8 +514,26 @@ def create_app(test_config=None):
     def incidents():
         team_id = session["role"]
         with STATE_LOCK, database(app) as db:
+            touch_presence(db)
             sync_kusto_if_configured(app, db)
-            return jsonify({"incidents": get_visible_incidents(db, team_id), "exercise": exercise_snapshot(db), "team": TEAMS[team_id]})
+            return jsonify({"incidents": get_visible_incidents(db, team_id), "exercise": exercise_snapshot(db), "team": TEAMS[team_id], "identity": {"display_name": current_actor()}})
+
+    @app.get("/api/team/presence")
+    @require_roles("alpha", "bravo")
+    def team_presence():
+        with database(app) as db:
+            touch_presence(db)
+            return jsonify({"people": presence_for_team(db, session["role"]), "current": current_actor()})
+
+    @app.post("/api/team/presence")
+    @require_roles("alpha", "bravo")
+    def update_team_presence():
+        incident_id = str((request.get_json(silent=True) or {}).get("incident_id") or "").strip()[:40] or None
+        valid = {item["id"] for item in DAY_ALERTS} | {item["id"] for item in HISTORICAL_INCIDENTS}
+        if incident_id and incident_id not in valid: return jsonify({"error": "Unknown incident."}), 400
+        with database(app) as db:
+            touch_presence(db, incident_id, True)
+            return jsonify({"people": presence_for_team(db, session["role"]), "current": current_actor()})
 
     @app.get("/api/incidents/<incident_id>/activity")
     @require_roles("alpha", "bravo")
@@ -431,12 +546,15 @@ def create_app(test_config=None):
     @app.patch("/api/incidents/<incident_id>")
     @require_roles("alpha", "bravo")
     def update_incident(incident_id):
-        team_id = session["role"]; team_name = TEAMS[team_id]
-        body = request.get_json(silent=True) or {}; actor = str(body.get("actor") or team_name).strip()[:80]; requested_status = str(body.get("status") or "").strip(); owner = str(body.get("owner") or actor).strip()[:80]; classification = str(body.get("classification") or "").strip() or None; notes = str(body.get("closure_notes") or "").strip() or None
+        team_id = session["role"]; actor = current_actor()
+        body = request.get_json(silent=True) or {}; requested_status = str(body.get("status") or "").strip(); owner = str(body.get("owner") or actor).strip()[:80]; classification = str(body.get("classification") or "").strip() or None; notes = str(body.get("closure_notes") or "").strip() or None
         definition = next((a for a in DAY_ALERTS if a["id"] == incident_id), None)
         if not definition: return jsonify({"error": "Historical incidents are read-only or the incident does not exist."}), 404
         with STATE_LOCK, database(app) as db:
+            if team_workspace_locked(db): return locked_response()
             if incident_id not in {i["id"] for i in get_visible_incidents(db, team_id)}: return jsonify({"error": "This incident has not been released."}), 404
+            valid_owners = {person["display_name"] for person in presence_for_team(db, team_id)} | {actor}
+            if owner not in valid_owners: return jsonify({"error": "Choose an analyst from your team roster."}), 400
             current = db.execute("SELECT * FROM incident_state WHERE team_id=? AND incident_id=?", (team_id, incident_id)).fetchone(); current_status = current["status"] if current else "New"
             allowed = {"New": {"Active"}, "Active": {"Closed"}, "Closed": set()}
             if requested_status not in allowed[current_status]: return jsonify({"error": f"Invalid transition: {current_status} to {requested_status}."}), 400
@@ -447,8 +565,27 @@ def create_app(test_config=None):
             db.execute("""INSERT INTO incident_state(team_id,incident_id,status,owner,classification,closure_notes,acknowledged_at,closed_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(team_id,incident_id) DO UPDATE SET status=excluded.status,owner=excluded.owner,classification=excluded.classification,closure_notes=excluded.closure_notes,acknowledged_at=excluded.acknowledged_at,closed_at=excluded.closed_at,updated_at=excluded.updated_at""", (team_id, incident_id, requested_status, owner, classification, notes, acknowledged, closed_at, now))
             detail = f"Status changed from {current_status} to {requested_status}." + (f" Classification: {classification}. Notes: {notes}" if classification else "")
             add_activity(db, team_id, incident_id, actor, "Status changed", detail)
+            touch_presence(db, incident_id if requested_status != "Closed" else None, True)
             state = db.execute("SELECT * FROM incident_state WHERE team_id=? AND incident_id=?", (team_id, incident_id)).fetchone()
             return jsonify({"incident": materialize_incident(definition, state)})
+
+    @app.patch("/api/incidents/<incident_id>/owner")
+    @require_roles("alpha", "bravo")
+    def reassign_incident(incident_id):
+        team_id = session["role"]; actor = current_actor()
+        owner = str((request.get_json(silent=True) or {}).get("owner") or "").strip()[:80]
+        with STATE_LOCK, database(app) as db:
+            if team_workspace_locked(db): return locked_response()
+            state = db.execute("SELECT * FROM incident_state WHERE team_id=? AND incident_id=?", (team_id, incident_id)).fetchone()
+            if not state or state["status"] != "Active": return jsonify({"error": "Only an active incident can be reassigned."}), 409
+            valid_owners = {person["display_name"] for person in presence_for_team(db, team_id)}
+            if owner not in valid_owners: return jsonify({"error": "Choose an analyst from your team roster."}), 400
+            previous = state["owner"]
+            db.execute("UPDATE incident_state SET owner=?,updated_at=? WHERE team_id=? AND incident_id=?", (owner, iso_time(), team_id, incident_id))
+            add_activity(db, team_id, incident_id, actor, "Owner changed", f"Owner changed from {previous} to {owner}.")
+            definition = next(item for item in DAY_ALERTS if item["id"] == incident_id)
+            updated = db.execute("SELECT * FROM incident_state WHERE team_id=? AND incident_id=?", (team_id, incident_id)).fetchone()
+            return jsonify({"incident": materialize_incident(definition, updated)})
 
     @app.get("/api/facilitator/review")
     @require_roles("facilitator")
@@ -456,10 +593,11 @@ def create_app(test_config=None):
         with database(app) as db:
             teams = {}
             for team_id, team_name in TEAMS.items():
-                teams[team_id] = {"name": team_name, "incidents": get_visible_incidents(db, team_id)}
+                teams[team_id] = {"name": team_name, "incidents": get_visible_incidents(db, team_id), "presence": presence_for_team(db, team_id)}
             activity = [dict(row) for row in db.execute("SELECT team_id,incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity ORDER BY id DESC")]
             observations = [dict(row) for row in db.execute("SELECT * FROM facilitator_observations ORDER BY id DESC")]
-            return jsonify({"exercise": exercise_snapshot(db), "teams": teams, "activity": activity, "observations": observations})
+            submission = db.execute("SELECT finalized_at FROM exercise_submission WHERE singleton=1").fetchone()
+            return jsonify({"exercise": exercise_snapshot(db), "teams": teams, "activity": activity, "observations": observations, "submission_finalized_at": submission["finalized_at"] if submission else None})
 
     @app.get("/api/facilitator/readiness")
     @require_roles("facilitator")
@@ -591,17 +729,23 @@ def create_app(test_config=None):
     def facilitator_export():
         with database(app) as db:
             snapshot = exercise_snapshot(db)
-            package = {"generated_at": iso_time(), "exercise": snapshot, "teams": {}, "facilitator_observations": [dict(row) for row in db.execute("SELECT * FROM facilitator_observations ORDER BY id")]}
-            for team_id, team_name in TEAMS.items():
-                day_incidents = [item for item in get_visible_incidents(db, team_id) if not item["historical"]]
-                bookmark_rows = db.execute("SELECT * FROM bookmarks WHERE team_id=? ORDER BY id", (team_id,)).fetchall()
-                team_bookmarks = []
-                for row in bookmark_rows:
-                    item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
-                    team_bookmarks.append(item)
-                journal = [dict(row) for row in db.execute("SELECT * FROM journal_entries WHERE team_id=? ORDER BY id", (team_id,))]
-                steps = [dict(row) for row in db.execute("SELECT incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity WHERE team_id=? ORDER BY id", (team_id,))]
-                package["teams"][team_id] = {"name": team_name, "incidents": day_incidents, "bookmarks": team_bookmarks, "journal": journal, "steps": steps}
+            frozen_row = db.execute("SELECT finalized_at,snapshot_json FROM exercise_submission WHERE singleton=1").fetchone()
+            package = {"generated_at": iso_time(), "exercise": snapshot, "submission_finalized_at": frozen_row["finalized_at"] if frozen_row else None, "teams": {}, "facilitator_observations": [dict(row) for row in db.execute("SELECT * FROM facilitator_observations ORDER BY id")]}
+            if frozen_row:
+                frozen = json.loads(frozen_row["snapshot_json"])
+                for team_id, team in frozen["teams"].items():
+                    package["teams"][team_id] = {**team, "steps": team.get("activity", [])}
+            else:
+                for team_id, team_name in TEAMS.items():
+                    day_incidents = [item for item in get_visible_incidents(db, team_id) if not item["historical"]]
+                    bookmark_rows = db.execute("SELECT * FROM bookmarks WHERE team_id=? ORDER BY id", (team_id,)).fetchall()
+                    team_bookmarks = []
+                    for row in bookmark_rows:
+                        item = dict(row); item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
+                        team_bookmarks.append(item)
+                    journal = [dict(row) for row in db.execute("SELECT * FROM journal_entries WHERE team_id=? ORDER BY id", (team_id,))]
+                    steps = [dict(row) for row in db.execute("SELECT incident_id,actor,action,detail,created_at,elapsed_seconds FROM activity WHERE team_id=? ORDER BY id", (team_id,))]
+                    package["teams"][team_id] = {"name": team_name, "incidents": day_incidents, "bookmarks": team_bookmarks, "journal": journal, "steps": steps}
 
         def elapsed_label(seconds):
             seconds = max(0, int(seconds or 0)); return f"T+{seconds//3600:02}:{seconds%3600//60:02}:{seconds%60:02}"
@@ -620,10 +764,10 @@ def create_app(test_config=None):
                 for item in team["journal"]
             ) or '<tr><td colspan="5">No investigation journal entries were recorded.</td></tr>'
             step_rows = "".join(
-                f"<tr><td>{elapsed_label(item['elapsed_seconds'])}</td><td>{html_escape(item['created_at'])}</td><td>{html_escape(item['action'])}</td><td>{html_escape(item.get('incident_id') or '—')}</td><td><pre>{html_escape(item['detail'])}</pre></td></tr>"
+                f"<tr><td>{elapsed_label(item['elapsed_seconds'])}</td><td>{html_escape(item['created_at'])}</td><td>{html_escape(item.get('actor') or 'Team')}</td><td>{html_escape(item['action'])}</td><td>{html_escape(item.get('incident_id') or '—')}</td><td><pre>{html_escape(item['detail'])}</pre></td></tr>"
                 for item in team["steps"]
-            ) or '<tr><td colspan="5">No analyst activity was recorded.</td></tr>'
-            return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html_escape(team['name'])} exercise report</title><style>body{{font:14px Arial,sans-serif;color:#17202a;margin:32px}}h1{{margin-bottom:4px}}.meta{{color:#586674}}table{{width:100%;border-collapse:collapse;margin:14px 0 28px}}th,td{{padding:8px;border:1px solid #ccd3da;text-align:left;vertical-align:top}}th{{background:#edf2f6}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;margin:4px 0}}section{{padding:12px;margin:12px 0;border:1px solid #ccd3da}}@media print{{body{{margin:12mm}}}}</style></head><body><h1>{html_escape(team['name'])} — Tabletop investigation report</h1><p class="meta">Generated {html_escape(package['generated_at'])} · Exercise state {html_escape(snapshot['status'])} · {elapsed_label(snapshot['elapsed_seconds'])}</p><h2>Incident decisions</h2><table><thead><tr><th>ID</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Acknowledged</th><th>Closed</th></tr></thead><tbody>{incident_rows}</tbody></table><h2>Investigation journal</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Category</th><th>Linked incident</th><th>Entry</th></tr></thead><tbody>{journal_rows}</tbody></table><h2>Saved evidence and bookmarks</h2>{bookmark_blocks}<h2>Investigation steps</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Action</th><th>Reference</th><th>Detail</th></tr></thead><tbody>{step_rows}</tbody></table></body></html>"""
+            ) or '<tr><td colspan="6">No analyst activity was recorded.</td></tr>'
+            return f"""<!doctype html><html><head><meta charset="utf-8"><title>{html_escape(team['name'])} exercise report</title><style>body{{font:14px Arial,sans-serif;color:#17202a;margin:32px}}h1{{margin-bottom:4px}}.meta{{color:#586674}}table{{width:100%;border-collapse:collapse;margin:14px 0 28px}}th,td{{padding:8px;border:1px solid #ccd3da;text-align:left;vertical-align:top}}th{{background:#edf2f6}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;font:12px Consolas,monospace;margin:4px 0}}section{{padding:12px;margin:12px 0;border:1px solid #ccd3da}}@media print{{body{{margin:12mm}}}}</style></head><body><h1>{html_escape(team['name'])} — Tabletop investigation report</h1><p class="meta">Generated {html_escape(package['generated_at'])} · Exercise state {html_escape(snapshot['status'])} · {elapsed_label(snapshot['elapsed_seconds'])}</p><h2>Incident decisions</h2><table><thead><tr><th>ID</th><th>Incident</th><th>Status</th><th>Owner</th><th>Classification</th><th>Closure notes</th><th>Acknowledged</th><th>Closed</th></tr></thead><tbody>{incident_rows}</tbody></table><h2>Investigation journal</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Category</th><th>Linked incident</th><th>Entry</th></tr></thead><tbody>{journal_rows}</tbody></table><h2>Saved evidence and bookmarks</h2>{bookmark_blocks}<h2>Investigation steps</h2><table><thead><tr><th>Exercise time</th><th>UTC time</th><th>Analyst</th><th>Action</th><th>Reference</th><th>Detail</th></tr></thead><tbody>{step_rows}</tbody></table></body></html>"""
 
         def facilitator_observations_html():
             rows = "".join(
@@ -668,9 +812,10 @@ def create_app(test_config=None):
         valid_incidents = {item["id"] for item in DAY_ALERTS} | {item["id"] for item in HISTORICAL_INCIDENTS}
         if incident_id and incident_id not in valid_incidents: return jsonify({"error": "Choose a valid linked incident."}), 400
         with database(app) as db:
+            if team_workspace_locked(db): return locked_response()
             elapsed = exercise_snapshot(db)["elapsed_seconds"]; now = iso_time()
             cursor = db.execute("INSERT INTO journal_entries(team_id,category,content,incident_id,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?)", (team_id,category,content,incident_id,now,elapsed))
-            add_activity(db, team_id, incident_id or "", TEAMS[team_id], "Journal entry created", f"{category}: {content}")
+            add_activity(db, team_id, incident_id or "", current_actor(), "Journal entry created", f"{category}: {content}")
             return jsonify({"id": cursor.lastrowid, "message": "Journal entry saved."}), 201
 
     @app.delete("/api/journal/<int:entry_id>")
@@ -678,10 +823,11 @@ def create_app(test_config=None):
     def delete_journal_entry(entry_id):
         team_id = session["role"]
         with database(app) as db:
+            if team_workspace_locked(db): return locked_response()
             row = db.execute("SELECT category,content,incident_id FROM journal_entries WHERE id=? AND team_id=?", (entry_id,team_id)).fetchone()
             if not row: return jsonify({"error": "Journal entry not found."}), 404
             db.execute("DELETE FROM journal_entries WHERE id=? AND team_id=?", (entry_id,team_id))
-            add_activity(db, team_id, row["incident_id"] or "", TEAMS[team_id], "Journal entry deleted", f"{row['category']}: {row['content']}")
+            add_activity(db, team_id, row["incident_id"] or "", current_actor(), "Journal entry deleted", f"{row['category']}: {row['content']}")
             return jsonify({"message": "Journal entry deleted."})
 
     @app.get("/api/bookmarks")
@@ -713,9 +859,10 @@ def create_app(test_config=None):
             evidence = {"row_count": evidence.get("row_count", 0), "columns": evidence.get("columns", []), "rows": [], "preview_truncated": True}
             evidence_json = json.dumps(evidence, ensure_ascii=False)
         with database(app) as db:
+            if team_workspace_locked(db): return locked_response()
             elapsed = exercise_snapshot(db)["elapsed_seconds"]; now = iso_time()
             cursor = db.execute("INSERT INTO bookmarks(team_id,title,notes,query,evidence_json,incident_id,created_at,elapsed_seconds) VALUES(?,?,?,?,?,?,?,?)", (team_id,title,notes,query,evidence_json,incident_id,now,elapsed))
-            add_activity(db, team_id, incident_id or "", TEAMS[team_id], "Bookmark created", f"{title}. {notes}")
+            add_activity(db, team_id, incident_id or "", current_actor(), "Bookmark created", f"{title}. {notes}")
             return jsonify({"id": cursor.lastrowid, "message": "Bookmark saved."}), 201
 
     @app.delete("/api/bookmarks/<int:bookmark_id>")
@@ -723,10 +870,11 @@ def create_app(test_config=None):
     def delete_bookmark(bookmark_id):
         team_id = session["role"]
         with database(app) as db:
+            if team_workspace_locked(db): return locked_response()
             row = db.execute("SELECT title,incident_id FROM bookmarks WHERE id=? AND team_id=?", (bookmark_id,team_id)).fetchone()
             if not row: return jsonify({"error": "Bookmark not found."}), 404
             db.execute("DELETE FROM bookmarks WHERE id=? AND team_id=?", (bookmark_id,team_id))
-            add_activity(db, team_id, row["incident_id"] or "", TEAMS[team_id], "Bookmark deleted", row["title"])
+            add_activity(db, team_id, row["incident_id"] or "", current_actor(), "Bookmark deleted", row["title"])
             return jsonify({"message": "Bookmark deleted."})
 
     @app.get("/api/analytics/rules")
@@ -748,7 +896,7 @@ def create_app(test_config=None):
         if not record: return jsonify({"error": "FreshService record not found."}), 404
         if session["role"] in TEAMS:
             with database(app) as db:
-                add_activity(db, session["role"], record["id"], TEAMS[session["role"]], "FreshService record opened", record["subject"])
+                if not team_workspace_locked(db): add_activity(db, session["role"], record["id"], current_actor(), "FreshService record opened", record["subject"])
         return jsonify({"record": record})
 
     @app.post("/api/kql/query")
@@ -763,12 +911,13 @@ def create_app(test_config=None):
             result = call_kusto("/v1/rest/query", query); table = (result.get("Tables") or [{}])[0]; columns = [column.get("ColumnName", "") for column in table.get("Columns", [])]; rows = [dict(zip(columns, row)) for row in table.get("Rows", [])]
             if session["role"] in TEAMS:
                 with database(app) as db:
-                    add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL query", f"Returned {len(rows)} records.\n{query}")
+                    if not team_workspace_locked(db): add_activity(db, session["role"], "", current_actor(), "KQL query", f"Returned {len(rows)} records.\n{query}")
             return jsonify({"success": True, "columns": columns, "rows": rows, "row_count": len(rows), "database": KUSTO_DATABASE})
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             if session["role"] in TEAMS:
-                with database(app) as db: add_activity(db, session["role"], "", TEAMS[session["role"]], "KQL query failed", query)
+                with database(app) as db:
+                    if not team_workspace_locked(db): add_activity(db, session["role"], "", current_actor(), "KQL query failed", query)
             return jsonify({"success": False, "error": detail or str(exc)}), 400
         except (URLError, TimeoutError, OSError): return jsonify({"success": False, "error": "The Kusto emulator is unavailable."}), 503
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc: return jsonify({"success": False, "error": f"Unexpected Kusto response: {exc}"}), 502
@@ -791,6 +940,7 @@ def create_app(test_config=None):
         if incident_id not in valid_incidents: return jsonify({"error": "Choose a valid linked incident."}), 400
         if session["role"] in TEAMS:
             with database(app) as db:
+                if team_workspace_locked(db): return locked_response()
                 previous = db.execute("SELECT created_at FROM activity WHERE team_id=? AND action='KQL results exported' ORDER BY id DESC LIMIT 1", (session["role"],)).fetchone()
                 if previous and (utc_now() - parse_time(previous["created_at"])).total_seconds() < 30:
                     return jsonify({"error": "Wait 30 seconds between evidence exports."}), 429
@@ -852,7 +1002,7 @@ def create_app(test_config=None):
             if session["role"] in TEAMS:
                 with database(app) as db:
                     detail = f"Export ID: {export_id}\nRows: {len(exported_rows)} of {len(result_rows)} returned\nExplanation: {explanation}\nQuery:\n{query}"
-                    add_activity(db, session["role"], incident_id, TEAMS[session["role"]], "KQL results exported", detail)
+                    add_activity(db, session["role"], incident_id, current_actor(), "KQL results exported", detail)
             payload = io.BytesIO(output.getvalue().encode("utf-8-sig"))
             response = send_file(payload, mimetype="text/csv", as_attachment=True, download_name=f"{export_id}_{team_label.replace(' ', '-')}_{incident_id}.csv")
             response.headers["X-Tabletop-Training-Data"] = "true"
